@@ -5,8 +5,9 @@ import { useStore } from "@/lib/store";
 import { Skill, SkillType, SKILL_TYPE_LABELS } from "@/lib/types";
 import { SkillForm } from "@/components/SkillForm";
 import { EnergyCostDisplay } from "@/components/EnergyBadge";
+import { GlossaryText } from "@/components/Tooltip";
 
-const TYPE_ORDER: SkillType[] = ["innate", "basic", "ability"];
+const TYPE_ORDER: SkillType[] = ["innate", "basic", "ability", "conditional"];
 
 function SkillItem({
   skill,
@@ -22,16 +23,20 @@ function SkillItem({
   onDelete: () => void;
 }) {
   const isAbility = skill.skillType === "ability";
+  const showLevels = (isAbility && skill.leveled !== false) || (skill.skillType === "conditional" && skill.leveled);
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
       <div className="flex items-center justify-between">
         <button className="text-left flex-1 cursor-pointer" onClick={onToggleExpand}>
           <span className="font-semibold text-white text-sm">{skill.name}</span>
-          {isAbility && (
+          {(isAbility || skill.skillType === "conditional") && skill.levels[0].cost.length > 0 && (
             <span className="ml-2">
               <EnergyCostDisplay cost={skill.levels[0].cost} />
             </span>
+          )}
+          {skill.description && (
+            <p className="text-xs text-gray-500 truncate mt-0.5"><GlossaryText text={skill.description} /></p>
           )}
         </button>
         <div className="flex gap-2">
@@ -56,21 +61,26 @@ function SkillItem({
       >
         <div className="overflow-hidden">
           <div className="mt-2 pl-2 border-l-2 border-gray-800">
-          {isAbility ? (
+          {showLevels ? (
             <div className="space-y-1">
               {skill.levels.map((level, i) => (
                 <div key={i} className="text-sm">
-                  <span className="text-gray-400 font-medium">Lv{i + 1}</span>{" "}
-                  <EnergyCostDisplay cost={level.cost} />{" "}
-                  <span className="text-gray-300">
-                    {level.description || "(no description)"}
-                  </span>
+                  <div>
+                    <span className="text-gray-400 font-medium">Lv{i + 1}</span>{" "}
+                    {(isAbility || skill.skillType === "conditional") && level.cost.length > 0 && <><EnergyCostDisplay cost={level.cost} />{" "}</>}
+                    <span className="text-gray-300">
+                      {level.description ? <GlossaryText text={level.description} /> : "(no description)"}
+                    </span>
+                  </div>
+                  {level.costNote && (
+                    <p className="text-[10px] text-yellow-500/70 italic ml-4 mt-0.5">{level.costNote}</p>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
             <p className="text-sm text-gray-300">
-              {skill.levels[0].description || "(no description)"}
+              {skill.levels[0].description ? <GlossaryText text={skill.levels[0].description} /> : "(no description)"}
             </p>
           )}
           </div>
@@ -81,55 +91,22 @@ function SkillItem({
 }
 
 export default function SkillsPage() {
-  const { skills, characters, addSkill, updateSkill, deleteSkill } =
-    useStore();
+  const { skills, templates, addSkill, updateSkill, deleteSkill } = useStore();
   const [editing, setEditing] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Group by character, then by type within each character
+  // Group by skill type
   const groupedSkills = useMemo(() => {
-    const groups: {
-      label: string;
-      charId: string;
-      typeGroups: { type: SkillType; label: string; skills: Skill[] }[];
-    }[] = [];
-
-    for (const char of characters) {
-      const charSkills = skills.filter((s) => s.characterId === char.id);
-      if (charSkills.length === 0) continue;
-
-      const typeGroups = TYPE_ORDER
-        .map((type) => ({
-          type,
-          label: SKILL_TYPE_LABELS[type],
-          skills: charSkills
-            .filter((s) => s.skillType === type)
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        }))
-        .filter((g) => g.skills.length > 0);
-
-      groups.push({ label: char.name, charId: char.id, typeGroups });
-    }
-
-    // Unassigned
-    const unassigned = skills.filter(
-      (s) => !s.characterId || !characters.some((c) => c.id === s.characterId)
-    );
-    if (unassigned.length > 0) {
-      const typeGroups = TYPE_ORDER
-        .map((type) => ({
-          type,
-          label: SKILL_TYPE_LABELS[type],
-          skills: unassigned
-            .filter((s) => s.skillType === type)
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        }))
-        .filter((g) => g.skills.length > 0);
-      groups.push({ label: "Unassigned", charId: "", typeGroups });
-    }
-
-    return groups;
-  }, [skills, characters]);
+    return TYPE_ORDER
+      .map((type) => ({
+        type,
+        label: SKILL_TYPE_LABELS[type],
+        skills: skills
+          .filter((s) => s.skillType === type)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .filter((g) => g.skills.length > 0);
+  }, [skills]);
 
   return (
     <div className="space-y-6">
@@ -144,10 +121,13 @@ export default function SkillsPage() {
           </button>
         )}
       </div>
+      <p className="text-xs text-gray-500">
+        Shared skill pool. Create skills here, then assign them to characters on their detail page.
+      </p>
 
       {editing === "new" && (
         <SkillForm
-          characters={characters}
+          templates={templates}
           onSave={(data) => {
             addSkill(data);
             setEditing(null);
@@ -162,47 +142,40 @@ export default function SkillsPage() {
         </p>
       )}
 
-      {groupedSkills.map((group) => (
-        <div key={group.charId || "__unassigned"} className="space-y-3">
+      {groupedSkills.map((tg) => (
+        <div key={tg.type} className="space-y-1.5">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-800 pb-1">
-            {group.label}
+            {tg.label} ({tg.skills.length})
           </h2>
-          {group.typeGroups.map((tg) => (
-            <div key={tg.type} className="space-y-1.5 pl-2">
-              <h3 className="text-xs font-medium text-gray-500 uppercase">
-                {tg.label}
-              </h3>
-              {tg.skills.map((skill) =>
-                editing === skill.id ? (
-                  <SkillForm
-                    key={skill.id}
-                    initial={skill}
-                    characters={characters}
-                    onSave={(data) => {
-                      updateSkill({ ...data, id: skill.id } as Skill);
-                      setEditing(null);
-                    }}
-                    onCancel={() => setEditing(null)}
-                  />
-                ) : (
-                  <SkillItem
-                    key={skill.id}
-                    skill={skill}
-                    expanded={expandedId === skill.id}
-                    onToggleExpand={() =>
-                      setExpandedId(expandedId === skill.id ? null : skill.id)
-                    }
-                    onEdit={() => setEditing(skill.id)}
-                    onDelete={() => {
-                      if (confirm(`Delete "${skill.name}"?`)) {
-                        deleteSkill(skill.id);
-                      }
-                    }}
-                  />
-                )
-              )}
-            </div>
-          ))}
+          {tg.skills.map((skill) =>
+            editing === skill.id ? (
+              <SkillForm
+                key={skill.id}
+                initial={skill}
+                templates={templates}
+                onSave={(data) => {
+                  updateSkill({ ...data, id: skill.id } as Skill);
+                  setEditing(null);
+                }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              <SkillItem
+                key={skill.id}
+                skill={skill}
+                expanded={expandedId === skill.id}
+                onToggleExpand={() =>
+                  setExpandedId(expandedId === skill.id ? null : skill.id)
+                }
+                onEdit={() => setEditing(skill.id)}
+                onDelete={() => {
+                  if (confirm(`Delete "${skill.name}"?`)) {
+                    deleteSkill(skill.id);
+                  }
+                }}
+              />
+            )
+          )}
         </div>
       ))}
     </div>

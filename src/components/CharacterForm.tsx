@@ -5,18 +5,32 @@ import {
   Character,
   CharacterStats,
   EnergyGeneration,
+  ElementalValues,
+  Element,
   CHARACTER_TYPES,
   ENERGY_COLORS,
+  ELEMENTS,
+  ELEMENT_LABELS,
+  ELEMENT_ICONS,
+  DEFAULT_ELEMENTAL,
   EnergyColor,
   CharacterType,
 } from "@/lib/types";
+
+const ENERGY_HEX: Record<EnergyColor, string> = {
+  red: "#ef4444",
+  blue: "#3b82f6",
+  green: "#22c55e",
+  purple: "#a855f7",
+  yellow: "#eab308",
+};
 
 const defaultStats = (): CharacterStats => ({
   hp: 100,
   atk: 10,
   mAtk: 10,
   def: 10,
-  res: 10,
+  spi: 10,
   spd: 5,
 });
 
@@ -45,6 +59,8 @@ export function CharacterForm({
     initial?.stats ?? defaultStats()
   );
   const [summary, setSummary] = useState(initial?.summary ?? "");
+  const [elemRes, setElemRes] = useState<ElementalValues>(initial?.elementalResistance ?? { ...DEFAULT_ELEMENTAL });
+  const [elemDmg, setElemDmg] = useState<ElementalValues>(initial?.elementalDamage ?? { ...DEFAULT_ELEMENTAL });
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(
     initial?.photoUrl
   );
@@ -95,9 +111,10 @@ export function CharacterForm({
       type,
       energyGeneration: energyGen,
       stats,
-      equippedInnateId: initial?.equippedInnateId ?? null,
-      equippedBasicId: initial?.equippedBasicId ?? null,
-      equippedAbilityIds: initial?.equippedAbilityIds ?? [],
+      elementalResistance: elemRes,
+      elementalDamage: elemDmg,
+      equippedLoadout: initial?.equippedLoadout ?? { innateId: null, basicId: null, abilityIds: [] },
+      statusResistance: initial?.statusResistance ?? {},
       photoUrl,
       summary: summary || undefined,
     });
@@ -208,7 +225,7 @@ export function CharacterForm({
               key={color}
               onClick={() => addEnergy(color)}
               className="px-2 py-0.5 rounded text-xs text-white capitalize hover:opacity-80"
-              style={{ backgroundColor: `var(--color-energy-${color})` }}
+              style={{ backgroundColor: ENERGY_HEX[color] }}
             >
               +{color}
             </button>
@@ -218,7 +235,7 @@ export function CharacterForm({
               key={e.color}
               onClick={() => removeEnergy(e.color)}
               className="px-2 py-0.5 rounded text-xs text-white capitalize opacity-60 hover:opacity-100"
-              style={{ backgroundColor: `var(--color-energy-${e.color})` }}
+              style={{ backgroundColor: ENERGY_HEX[e.color] }}
             >
               -{e.color}
             </button>
@@ -232,9 +249,9 @@ export function CharacterForm({
           Stats
         </label>
         <div className="grid grid-cols-6 gap-2">
-          {(
-            Object.entries(stats) as [keyof CharacterStats, number][]
-          ).map(([key, val]) => (
+          {(["hp", "atk", "mAtk", "def", "spi", "spd"] as const).map((key) => {
+            const val = stats[key];
+            return (
             <div key={key}>
               <label className="block text-xs text-gray-500 uppercase">
                 {key}
@@ -246,6 +263,55 @@ export function CharacterForm({
                 onChange={(e) =>
                   updateStat(key, parseInt(e.target.value) || 0)
                 }
+              />
+            </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Elemental Resistance */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-1">
+          Elemental Resistance (%)
+        </label>
+        <div className="grid grid-cols-7 gap-2">
+          {ELEMENTS.map((elem) => (
+            <div key={elem}>
+              <label className="block text-[10px] text-gray-500 text-center">
+                {ELEMENT_ICONS[elem]} {ELEMENT_LABELS[elem]}
+              </label>
+              <input
+                type="number"
+                className={`w-full bg-gray-800 border rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-gray-500 ${
+                  elemRes[elem] !== 100 ? "border-blue-500/50 text-blue-300" : "border-gray-700 text-white"
+                }`}
+                value={elemRes[elem]}
+                onChange={(e) => setElemRes({ ...elemRes, [elem]: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Elemental Damage */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-1">
+          Elemental Damage (%)
+        </label>
+        <div className="grid grid-cols-7 gap-2">
+          {ELEMENTS.map((elem) => (
+            <div key={elem}>
+              <label className="block text-[10px] text-gray-500 text-center">
+                {ELEMENT_ICONS[elem]} {ELEMENT_LABELS[elem]}
+              </label>
+              <input
+                type="number"
+                className={`w-full bg-gray-800 border rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-gray-500 ${
+                  elemDmg[elem] !== 100 ? "border-blue-500/50 text-blue-300" : "border-gray-700 text-white"
+                }`}
+                value={elemDmg[elem]}
+                onChange={(e) => setElemDmg({ ...elemDmg, [elem]: parseInt(e.target.value) || 0 })}
               />
             </div>
           ))}

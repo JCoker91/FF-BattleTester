@@ -6,6 +6,6 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const data = await request.json();
-  const character = insertCharacter(data);
-  return Response.json(character, { status: 201 });
+  const result = insertCharacter(data);
+  return Response.json(result, { status: 201 });
 }
