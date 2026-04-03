@@ -65,9 +65,12 @@ function EffectsEditor({
   const [duration, setDuration] = useState(2);
   const [chance, setChance] = useState(100);
   const [trigger, setTrigger] = useState<EffectTrigger>("on-use");
+  const [triggerValue, setTriggerValue] = useState(50);
+  const [once, setOnce] = useState(false);
 
   const isEditing = editIdx !== null;
   const showForm = adding || isEditing;
+  const isHpTrigger = trigger === "on-hp-below" || trigger === "on-hp-above";
 
   const startEdit = (i: number) => {
     const e = effects[i];
@@ -79,6 +82,8 @@ function EffectsEditor({
     setDuration(e.duration);
     setChance(e.chance ?? 100);
     setTrigger(e.trigger ?? "on-use");
+    setTriggerValue(e.triggerValue ?? 50);
+    setOnce(e.once ?? false);
   };
 
   const resetForm = () => {
@@ -89,6 +94,8 @@ function EffectsEditor({
     setDuration(2);
     setChance(100);
     setTrigger("on-use");
+    setTriggerValue(50);
+    setOnce(false);
   };
 
   const handleSave = () => {
@@ -100,6 +107,8 @@ function EffectsEditor({
       duration,
       ...(chance < 100 ? { chance } : {}),
       ...(trigger !== "on-use" ? { trigger } : {}),
+      ...(isHpTrigger ? { triggerValue } : {}),
+      ...(once ? { once: true } : {}),
     };
     if (isEditing && editIdx !== null) {
       onChange(effects.map((e, i) => (i === editIdx ? entry : e)));
@@ -147,14 +156,18 @@ function EffectsEditor({
                 {!se?.stats.includes("none") && (
                   <span className="text-gray-400">{e.modifier > 0 ? "+" : ""}{e.modifier}%</span>
                 )}
-                <span className="text-gray-600">{e.duration}t</span>
+                <span className="text-gray-600">{e.duration === -1 ? "Perm" : `${e.duration}t`}</span>
                 <span className="text-gray-500 text-[10px]">{TARGET_TYPE_LABELS[e.targetType]}</span>
                 {e.trigger && e.trigger !== "on-use" && (
-                  <span className="text-sky-400 text-[10px]">{EFFECT_TRIGGER_LABELS[e.trigger]}</span>
+                  <span className="text-sky-400 text-[10px]">
+                    {EFFECT_TRIGGER_LABELS[e.trigger]}
+                    {e.triggerValue !== undefined && ` ${e.triggerValue}%`}
+                  </span>
                 )}
                 {e.chance !== undefined && e.chance < 100 && (
                   <span className="text-amber-400 text-[10px]">{e.chance}% chance</span>
                 )}
+                {e.once && <span className="text-pink-400 text-[10px]">1x</span>}
                 <button onClick={() => startEdit(i)} className="ml-auto text-gray-600 hover:text-blue-400 text-[10px]">edit</button>
                 <button onClick={() => onChange(effects.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 text-[10px]">x</button>
               </div>
@@ -207,6 +220,20 @@ function EffectsEditor({
                 <option key={t} value={t}>{EFFECT_TRIGGER_LABELS[t]}</option>
               ))}
             </select>
+            {isHpTrigger && (
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                at
+                <input
+                  type="number"
+                  className="w-10 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={triggerValue}
+                  onChange={(e) => setTriggerValue(parseInt(e.target.value) || 0)}
+                  min={1}
+                  max={99}
+                />
+                % HP
+              </label>
+            )}
           </div>
           <div className="flex gap-1.5 items-center flex-wrap">
             {selectedEffect && !selectedEffect.stats.includes("none") && (
@@ -222,13 +249,32 @@ function EffectsEditor({
             )}
             <label className="flex items-center gap-1 text-[10px] text-gray-400">
               Dur
-              <input
-                type="number"
-                className="w-8 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                value={duration}
-                onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
-              />
-              t
+              {duration === -1 ? (
+                <button
+                  type="button"
+                  onClick={() => setDuration(2)}
+                  className="px-1.5 py-0.5 bg-gray-900 border border-gray-700 rounded text-[10px] text-purple-400 font-medium"
+                >
+                  Perm
+                </button>
+              ) : (
+                <input
+                  type="number"
+                  className="w-8 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={duration}
+                  onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
+                  min={-1}
+                />
+              )}
+              {duration !== -1 && <span>t</span>}
+              <button
+                type="button"
+                onClick={() => setDuration(duration === -1 ? 2 : -1)}
+                className={`px-1 py-0.5 rounded text-[9px] ${duration === -1 ? "text-purple-400" : "text-gray-600 hover:text-gray-400"}`}
+                title="Toggle permanent"
+              >
+                ∞
+              </button>
             </label>
             <label className="flex items-center gap-1 text-[10px] text-gray-400">
               Chance
@@ -243,7 +289,16 @@ function EffectsEditor({
               %
             </label>
           </div>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 items-center">
+            <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={once}
+                onChange={(e) => setOnce(e.target.checked)}
+                className="w-3 h-3"
+              />
+              Once per battle
+            </label>
             <button
               onClick={handleSave}
               disabled={!effectId}

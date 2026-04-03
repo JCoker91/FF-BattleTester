@@ -32,7 +32,7 @@ interface GameStore {
   updateTeam: (team: Team) => Promise<void>;
   resetTeams: () => Promise<void>;
   addForm: (characterId: string, name: string) => Promise<Form>;
-  updateForm: (id: string, data: { name: string; photoUrl?: string | null; typeOverride?: string | null; energyOverride?: { color: string; amount: number }[] | null; statOverrides?: Record<string, number> | null; elementalResOverride?: Record<string, number> | null; elementalDmgOverride?: Record<string, number> | null; statusResistanceOverride?: Record<string, number> | null; summary?: string | null }) => Promise<void>;
+  updateForm: (id: string, data: { name: string; photoUrl?: string | null; typeOverride?: string | null; energyOverride?: { color: string; amount: number }[] | null; statOverrides?: Record<string, number> | null; elementalResOverride?: Record<string, number> | null; elementalDmgOverride?: Record<string, number> | null; statusResistanceOverride?: Record<string, number> | null; startable?: boolean; summary?: string | null }) => Promise<void>;
   deleteForm: (id: string) => Promise<void>;
   reorderForms: (characterId: string, orderedIds: string[]) => Promise<void>;
   addSeries: (name: string) => Promise<Series>;

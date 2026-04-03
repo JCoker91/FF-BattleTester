@@ -306,6 +306,19 @@ if (seColumns.length > 0 && !seColumns.some((c) => c.name === "tags")) {
   }
 }
 
+// status_effects: form_id and dispellable columns
+if (seColumns.length > 0 && !seColumns.some((c) => c.name === "form_id")) {
+  db.exec("ALTER TABLE status_effects ADD COLUMN form_id TEXT DEFAULT NULL");
+}
+if (seColumns.length > 0 && !seColumns.some((c) => c.name === "dispellable")) {
+  db.exec("ALTER TABLE status_effects ADD COLUMN dispellable INTEGER NOT NULL DEFAULT 1");
+}
+
+// forms: startable column
+if (!formColumns.some((c) => c.name === "startable")) {
+  db.exec("ALTER TABLE forms ADD COLUMN startable INTEGER NOT NULL DEFAULT 1");
+}
+
 if (!skillColumns.some((c) => c.name === "description")) {
   db.exec("ALTER TABLE skills ADD COLUMN description TEXT NOT NULL DEFAULT ''");
 }
@@ -549,6 +562,7 @@ interface FormRow {
   elemental_res_override: string | null;
   elemental_dmg_override: string | null;
   status_resistance_override: string | null;
+  startable: number;
   summary: string | null;
 }
 
@@ -569,6 +583,7 @@ function rowToForm(row: FormRow): Form {
     elementalResOverride: row.elemental_res_override ? JSON.parse(row.elemental_res_override) : undefined,
     elementalDmgOverride: row.elemental_dmg_override ? JSON.parse(row.elemental_dmg_override) : undefined,
     statusResistanceOverride: row.status_resistance_override ? JSON.parse(row.status_resistance_override) : undefined,
+    startable: row.startable === 0 ? false : undefined, // default true, only store false
     summary: row.summary ?? undefined,
   };
 }
@@ -589,13 +604,14 @@ export function insertForm(characterId: string, name: string): Form {
   return { id, characterId, name, sortOrder };
 }
 
-export function updateFormDb(id: string, data: { name: string; photoUrl?: string | null; typeOverride?: string | null; energyOverride?: unknown[] | null; statOverrides?: Record<string, number> | null; elementalResOverride?: Record<string, number> | null; elementalDmgOverride?: Record<string, number> | null; statusResistanceOverride?: Record<string, number> | null; summary?: string | null }): void {
+export function updateFormDb(id: string, data: { name: string; photoUrl?: string | null; typeOverride?: string | null; energyOverride?: unknown[] | null; statOverrides?: Record<string, number> | null; elementalResOverride?: Record<string, number> | null; elementalDmgOverride?: Record<string, number> | null; statusResistanceOverride?: Record<string, number> | null; startable?: boolean; summary?: string | null }): void {
   const toJson = (obj: Record<string, number> | null | undefined) => obj && Object.keys(obj).length > 0 ? JSON.stringify(obj) : null;
-  db.prepare("UPDATE forms SET name = ?, photo_url = ?, type_override = ?, energy_override = ?, stat_overrides = ?, elemental_res_override = ?, elemental_dmg_override = ?, status_resistance_override = ?, summary = ? WHERE id = ?").run(
+  db.prepare("UPDATE forms SET name = ?, photo_url = ?, type_override = ?, energy_override = ?, stat_overrides = ?, elemental_res_override = ?, elemental_dmg_override = ?, status_resistance_override = ?, startable = ?, summary = ? WHERE id = ?").run(
     data.name, data.photoUrl ?? null, data.typeOverride ?? null,
     data.energyOverride ? JSON.stringify(data.energyOverride) : null,
     toJson(data.statOverrides), toJson(data.elementalResOverride), toJson(data.elementalDmgOverride),
     toJson(data.statusResistanceOverride),
+    data.startable === false ? 0 : 1,
     data.summary ?? null, id
   );
 }
@@ -829,6 +845,8 @@ interface StatusEffectRow {
   on_max_stacks: string | null;
   resistable: number;
   tags: string | null;
+  form_id: string | null;
+  dispellable: number;
 }
 
 function rowToStatusEffect(row: StatusEffectRow): StatusEffect {
@@ -843,6 +861,8 @@ function rowToStatusEffect(row: StatusEffectRow): StatusEffect {
     onMaxStacks: row.on_max_stacks ?? undefined,
     resistable: row.resistable === 1 ? true : undefined,
     tags: row.tags ? JSON.parse(row.tags) : undefined,
+    formId: row.form_id ?? undefined,
+    dispellable: row.dispellable === 0 ? false : undefined, // default true, only store false
   };
 }
 
@@ -853,7 +873,7 @@ export function getAllStatusEffects(): StatusEffect[] {
 export function insertStatusEffect(data: Omit<StatusEffect, "id">): StatusEffect {
   const id = uuid();
   db.prepare(
-    "INSERT INTO status_effects (id, name, category, stats, default_modifier, stackable, max_stacks, on_max_stacks, resistable, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO status_effects (id, name, category, stats, default_modifier, stackable, max_stacks, on_max_stacks, resistable, tags, form_id, dispellable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(
     id, data.name, data.category, JSON.stringify(data.stats),
     data.defaultModifier ?? null,
@@ -861,14 +881,16 @@ export function insertStatusEffect(data: Omit<StatusEffect, "id">): StatusEffect
     data.maxStacks ?? null,
     data.onMaxStacks ?? null,
     data.resistable ? 1 : 0,
-    data.tags ? JSON.stringify(data.tags) : null
+    data.tags ? JSON.stringify(data.tags) : null,
+    data.formId ?? null,
+    data.dispellable === false ? 0 : 1
   );
   return { ...data, id };
 }
 
 export function updateStatusEffectDb(effect: StatusEffect): void {
   db.prepare(
-    "UPDATE status_effects SET name = ?, category = ?, stats = ?, default_modifier = ?, stackable = ?, max_stacks = ?, on_max_stacks = ?, resistable = ?, tags = ? WHERE id = ?"
+    "UPDATE status_effects SET name = ?, category = ?, stats = ?, default_modifier = ?, stackable = ?, max_stacks = ?, on_max_stacks = ?, resistable = ?, tags = ?, form_id = ?, dispellable = ? WHERE id = ?"
   ).run(
     effect.name, effect.category, JSON.stringify(effect.stats),
     effect.defaultModifier ?? null,
@@ -877,6 +899,8 @@ export function updateStatusEffectDb(effect: StatusEffect): void {
     effect.onMaxStacks ?? null,
     effect.resistable ? 1 : 0,
     effect.tags ? JSON.stringify(effect.tags) : null,
+    effect.formId ?? null,
+    effect.dispellable === false ? 0 : 1,
     effect.id
   );
 }

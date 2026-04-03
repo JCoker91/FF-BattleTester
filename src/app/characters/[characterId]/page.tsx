@@ -27,7 +27,7 @@ function SkillEffectTag({ effect }: { effect: SkillEffect }) {
   return (
     <span className="inline-flex items-center gap-1 text-[10px]">
       <span className={se.category === "buff" ? "text-green-400" : se.category === "status" ? "text-yellow-400" : "text-red-400"}>{se.name}{modText}</span>
-      <span className="text-gray-600">{effect.duration}t</span>
+      <span className="text-gray-600">{effect.duration === -1 ? "Perm" : `${effect.duration}t`}</span>
       <span className="text-gray-500">{TARGET_TYPE_LABELS[effect.targetType]}</span>
       {effect.chance !== undefined && effect.chance < 100 && (
         <span className="text-amber-400">{effect.chance}%</span>
@@ -420,6 +420,7 @@ export default function CharacterDetailPage() {
   const [editFormElemRes, setEditFormElemRes] = useState<Record<string, number> | null>(null);
   const [editFormElemDmg, setEditFormElemDmg] = useState<Record<string, number> | null>(null);
   const [editFormSummary, setEditFormSummary] = useState<string>("");
+  const [editFormStartable, setEditFormStartable] = useState<boolean>(true);
   const [uploadingFormPhoto, setUploadingFormPhoto] = useState(false);
   const [newFormName, setNewFormName] = useState("");
 
@@ -878,6 +879,7 @@ export default function CharacterDetailPage() {
                   setEditFormElemRes(f.elementalResOverride ?? null);
                   setEditFormElemDmg(f.elementalDmgOverride ?? null);
                   setEditFormSummary(f.summary ?? "");
+                  setEditFormStartable(f.startable !== false);
                 }}
                 className="text-[10px] text-gray-600 hover:text-gray-400"
                 title="Edit form"
@@ -926,6 +928,7 @@ export default function CharacterDetailPage() {
               statOverrides: editFormStats,
               elementalResOverride: editFormElemRes,
               elementalDmgOverride: editFormElemDmg,
+              startable: editFormStartable,
               summary: editFormSummary || null,
             });
             setEditingFormId(null);
@@ -1193,6 +1196,16 @@ export default function CharacterDetailPage() {
                   })}
                 </div>
               </div>
+
+              <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editFormStartable}
+                  onChange={(e) => setEditFormStartable(e.target.checked)}
+                  className="w-3.5 h-3.5"
+                />
+                Startable (can be selected as starting form in battle staging)
+              </label>
 
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Summary <span className="text-gray-600">(optional — shown on hover in skill tooltips)</span></label>

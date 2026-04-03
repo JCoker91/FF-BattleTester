@@ -280,6 +280,8 @@ function ParamInput({ paramKey, def, value, onChange }: { paramKey: string; def:
 
 export default function ConfigPage() {
   const {
+    characters,
+    forms,
     seriesList,
     addSeries,
     updateSeries,
@@ -727,6 +729,28 @@ export default function ConfigPage() {
                     />
                     Resistable (characters can have resistance)
                   </label>
+                  <label className="flex items-center gap-1.5 text-sm text-gray-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={seForm.dispellable !== false}
+                      onChange={(e) => setSEForm({ ...seForm, dispellable: e.target.checked ? undefined : false })}
+                      className="w-3.5 h-3.5"
+                    />
+                    Dispellable (can be removed by dispel effects)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Triggers Form:</span>
+                    <select
+                      className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none"
+                      value={seForm.formId ?? ""}
+                      onChange={(e) => setSEForm({ ...seForm, formId: e.target.value || undefined })}
+                    >
+                      <option value="">None</option>
+                      {forms.map((f) => (
+                        <option key={f.id} value={f.id}>{f.name} ({characters.find((c) => c.id === f.characterId)?.name ?? "?"})</option>
+                      ))}
+                    </select>
+                  </div>
                   {seForm.category === "status" && (
                     <TagsEditor
                       tags={seForm.tags ?? []}
@@ -779,6 +803,12 @@ export default function ConfigPage() {
               )}
               {se.stackable && <span className="text-[10px] text-purple-400">stackable x{se.maxStacks ?? "∞"}</span>}
               {se.resistable && <span className="text-[10px] text-amber-400">resistable</span>}
+              {se.dispellable === false && <span className="text-[10px] text-gray-500">non-dispellable</span>}
+              {se.formId && (
+                <span className="text-[10px] text-blue-400">
+                  form: {forms.find((f) => f.id === se.formId)?.name ?? "?"}
+                </span>
+              )}
               {se.tags && se.tags.length > 0 && (
                 <span className="text-[10px] text-yellow-400">
                   {se.tags.length} tag{se.tags.length > 1 ? "s" : ""}

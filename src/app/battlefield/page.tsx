@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -13,7 +13,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { useStore } from "@/lib/store";
-import { Character, CharacterType, CHARACTER_TYPES, CharacterSkill, Skill, SkillLevel, SkillEffect, SkillTemplate, TemplateAction, Team, PlacedCharacter, EnergyColor, ENERGY_COLORS, EnergyGeneration, SKILL_TYPE_LABELS, ELEMENTS, ELEMENT_ICONS, ELEMENT_LABELS, TARGET_TYPE_LABELS, Form, BuffDebuff, BattleState, DamageResult, StatusEffect, ResistanceGrant, Element, resolveFormView, toggleEquipLoadout } from "@/lib/types";
+import { Character, CharacterType, CHARACTER_TYPES, CharacterSkill, Skill, SkillLevel, SkillEffect, SkillTemplate, TemplateAction, Team, PlacedCharacter, EnergyColor, ENERGY_COLORS, EnergyGeneration, SKILL_TYPE_LABELS, ELEMENTS, ELEMENT_ICONS, ELEMENT_LABELS, TARGET_TYPE_LABELS, TargetType, Form, BuffDebuff, BattleState, DamageResult, StatusEffect, ResistanceGrant, Element, resolveFormView, toggleEquipLoadout } from "@/lib/types";
 import { DAMAGE_TIER_LABELS, DAMAGE_CATEGORY_LABELS, DamageTier } from "@/lib/damage-config";
 import { calculateDamage } from "@/lib/damage-calc";
 import { resolveTargets, TargetResolution } from "@/lib/targeting";
@@ -55,19 +55,58 @@ function applyBuffStacking(
     }
     return {
       buffs: existing.map((b) =>
-        b.id === match.id ? { ...b, stacks: newStacks, duration: incoming.duration > 0 ? incoming.duration : b.duration } : b
+        b.id === match.id ? { ...b, stacks: newStacks, duration: incoming.duration > 0 ? Math.max(b.duration, incoming.duration) : b.duration } : b
       ),
       triggered: null,
     };
   }
 
-  // Non-stackable or already at max: refresh duration only
+  // Non-stackable or already at max: take the stronger modifier and higher duration
+  // For buffs (positive), stronger = higher. For debuffs (negative), stronger = more negative.
+  const strongerModifier = incoming.modifier >= 0
+    ? Math.max(match.modifier, incoming.modifier)   // buff: take higher
+    : Math.min(match.modifier, incoming.modifier);   // debuff: take more negative
   return {
     buffs: existing.map((b) =>
-      b.id === match.id ? { ...b, duration: incoming.duration > 0 ? incoming.duration : b.duration } : b
+      b.id === match.id ? {
+        ...b,
+        modifier: strongerModifier,
+        duration: incoming.duration > 0 ? Math.max(b.duration, incoming.duration) : b.duration,
+        appliedTurn: incoming.appliedTurn ?? b.appliedTurn,
+      } : b
     ),
     triggered: null,
   };
+}
+
+/** Classify a target type as direct, aoe, or other for filter matching. */
+function getAttackCategory(targetType?: TargetType): "direct" | "aoe" | "other" {
+  if (!targetType) return "other";
+  const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy"]);
+  const directTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "target-ally", "target-ally-or-self", "random-ally", "adjacent-ally"]);
+  if (aoeTypes.has(targetType)) return "aoe";
+  if (directTypes.has(targetType)) return "direct";
+  return "other";
+}
+
+/**
+ * Apply force-target override: if the attacker has a force-target buff from an enemy,
+ * direct attacks must target that enemy. Returns the forced target char ID or null.
+ */
+function getForceTarget(attackerBuffs: BuffDebuff[], attackCategory: "direct" | "aoe" | "other"): string | null {
+  // Find the most recent force-target buff (last one wins)
+  for (let i = attackerBuffs.length - 1; i >= 0; i--) {
+    const b = attackerBuffs[i];
+    if (!b.tags || !b.sourceCharId) continue;
+    for (const tag of b.tags) {
+      if (tag.type !== "force-target") continue;
+      const filter = (tag.params.filter as string) ?? "direct";
+      if (filter === "any" || filter === attackCategory) {
+        return b.sourceCharId;
+      }
+    }
+  }
+  return null;
 }
 
 /** Compute the total buff modifier for a stat, including multi-stat buffs and stacks. */
@@ -75,6 +114,46 @@ function getBuffModifier(buffs: BuffDebuff[], stat: string): number {
   return buffs
     .filter((b) => b.stats.includes(stat))
     .reduce((sum, b) => sum + b.modifier * (b.stacks ?? 1), 0);
+}
+
+function StatusResistanceDisplay({
+  characterId,
+  getCharacter,
+  activeForm,
+  passiveGrants,
+}: {
+  characterId: string;
+  getCharacter: (id: string) => Character | undefined;
+  activeForm?: Form;
+  passiveGrants?: ResistanceGrant[];
+}) {
+  const { statusEffects } = useStore();
+  const char = getCharacter(characterId);
+  if (!char) return null;
+  const resistable = statusEffects.filter((se) => se.resistable);
+  if (resistable.length === 0) return null;
+  return (
+    <div>
+      <span className="text-gray-500 font-medium text-[10px] uppercase">Status Resistance</span>
+      <div className="grid grid-cols-4 gap-1 mt-1">
+        {resistable.map((se) => {
+          const base = char.statusResistance[se.id] ?? 0;
+          const formOverride = activeForm?.statusResistanceOverride?.[se.id];
+          const baseVal = formOverride ?? base;
+          const passiveBonus = passiveGrants ? getPassiveStatusResistance(passiveGrants, se.id) : 0;
+          const val = Math.min(100, baseVal + passiveBonus);
+          return (
+            <div key={se.id} className="text-center bg-gray-800 rounded p-1">
+              <div className={`text-[10px] font-bold ${val >= 100 ? "text-green-400" : val > 0 ? "text-yellow-400" : "text-gray-400"}`}>
+                {val}%
+              </div>
+              <div className="text-[7px] text-gray-600 -mt-0.5 truncate">{se.name}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -135,7 +214,7 @@ function SkillEffectDisplay({ effect }: { effect: SkillEffect }) {
   return (
     <div className="flex items-center gap-1.5 text-[10px]">
       <span className={se.category === "buff" ? "text-green-400" : se.category === "status" ? "text-yellow-400" : "text-red-400"}>{se.name}{modText}</span>
-      <span className="text-gray-600">{effect.duration}t</span>
+      <span className="text-gray-600">{effect.duration === -1 ? "Perm" : `${effect.duration}t`}</span>
       <span className="text-gray-500">{TARGET_TYPE_LABELS[effect.targetType]}</span>
       {effect.chance !== undefined && effect.chance < 100 && (
         <span className="text-amber-400">{effect.chance}%</span>
@@ -512,6 +591,7 @@ export default function BattlefieldPage() {
   const [buffsMap, setBuffsMap] = useState<Record<string, BuffDebuff[]>>({});
   const [viewedCharId, setViewedCharId] = useState<string | null>(null);
   const [detailsTab, setDetailsTab] = useState<"stats" | "skills">("stats");
+  const [stagingFormMap, setStagingFormMap] = useState<Record<string, string>>({}); // charId -> selected starting formId
   const [battleFormMap, setBattleFormMap] = useState<Record<string, string>>({}); // charId -> active formId
   const [skillLevelMap, setSkillLevelMap] = useState<Record<string, number>>({}); // skillId -> current level (1-3, default 1)
   const [expandedTemplateSkillId, setExpandedTemplateSkillId] = useState<string | null>(null);
@@ -519,10 +599,133 @@ export default function BattlefieldPage() {
   const [templatePreviewTargetId, setTemplatePreviewTargetId] = useState<string>("");
   const [teamEnergy, setTeamEnergy] = useState<Record<string, Record<string, number>>>({});
   const [battleLog, setBattleLog] = useState<string[]>([]);
+  const [firedOnceEffects, setFiredOnceEffects] = useState<Set<string>>(new Set()); // "charId:skillId:effectIdx"
 
   const addBattleLog = (entry: string) => {
     setBattleLog((prev) => [...prev, entry]);
   };
+
+  // Auto-switch forms when form-linked statuses are applied or removed
+  useEffect(() => {
+    if (phase !== "battle") return;
+    // Build a set of all form IDs that are linked to any status effect
+    const formLinkedFormIds = new Set(statusEffects.filter((se) => se.formId).map((se) => se.formId!));
+
+    setBattleFormMap((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      // Check all characters in the battle form map
+      for (const charId of Object.keys(next)) {
+        const charBuffs = buffsMap[charId] ?? [];
+        // Find the most recent form-linked status (last applied wins)
+        let formFromStatus: string | null = null;
+        for (const b of charBuffs) {
+          const se = statusEffects.find((s) => s.id === b.effectId);
+          if (se?.formId) formFromStatus = se.formId;
+        }
+        if (formFromStatus) {
+          // Has a form-linked status — switch to that form
+          if (next[charId] !== formFromStatus) {
+            next[charId] = formFromStatus;
+            changed = true;
+          }
+        } else if (formLinkedFormIds.has(next[charId])) {
+          // Currently on a form that is status-linked, but no longer has the status — revert
+          const charForms = getFormsForCharacter(charId);
+          const defaultForm = charForms.find((f) => f.startable !== false) ?? charForms[0];
+          if (defaultForm && next[charId] !== defaultForm.id) {
+            next[charId] = defaultForm.id;
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [buffsMap, phase, statusEffects, getFormsForCharacter]);
+
+  // Helper: apply a buff from a passive skill effect, handling form conflicts
+  const applyPassiveEffectBuff = (charId: string, eff: SkillEffect, skill: Skill, se: StatusEffect) => {
+    const buff: Omit<BuffDebuff, "id"> = {
+      effectId: se.id,
+      effectName: se.name,
+      category: se.category,
+      stats: se.stats,
+      modifier: !se.stats.includes("none") ? eff.modifier : 0,
+      duration: eff.duration,
+      source: skill.name,
+      sourceCharId: charId,
+      appliedTurn: round * 100 + currentTurnIndex,
+      ...(se.tags ? { tags: se.tags } : {}),
+      ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
+    };
+    setBuffsMap((prev) => {
+      let existing = prev[charId] ?? [];
+      // If this is a form-linked status, remove any other form-linked statuses first
+      if (se.formId) {
+        existing = existing.filter((b) => {
+          const bSe = statusEffects.find((s) => s.id === b.effectId);
+          return !bSe?.formId || bSe.id === se.id;
+        });
+      }
+      const { buffs: updated } = applyBuffStacking(existing, buff);
+      return { ...prev, [charId]: updated };
+    });
+    addBattleLog(`${getCharacter(charId)?.name ?? "Unknown"} gains ${se.name} from ${skill.name}.`);
+  };
+
+  // Monitor HP changes and fire on-hp-below / on-hp-above triggers from passive skills
+  useEffect(() => {
+    if (phase !== "battle") return;
+    for (const team of teams) {
+      for (const p of team.placements) {
+        const charId = p.characterId;
+        const char = getCharacter(charId);
+        if (!char) continue;
+        const hp = currentHpMap[charId];
+        if (hp === undefined) continue; // not initialized yet
+        const maxHp = char.stats.hp;
+        const hpPct = (hp / maxHp) * 100;
+        const formId = battleFormMap[charId] ?? null;
+        const charAssigns = characterSkills.filter((cs) => cs.characterId === charId);
+        const resolved = resolveFormView(char, formId, skills, charAssigns);
+        const allResolved = [resolved.innate, resolved.basic, ...resolved.abilities, ...resolved.conditionals].filter(Boolean) as Skill[];
+        for (const skill of allResolved) {
+          const canLevel = (skill.skillType === "ability" && skill.leveled !== false) || (skill.skillType === "conditional" && skill.leveled);
+          const lvlIdx = canLevel ? (skillLevelMap[skill.id] ?? 1) - 1 : 0;
+          const level = skill.levels[lvlIdx];
+          if (!level?.passive || !level.effects) continue;
+          level.effects.forEach((eff, effIdx) => {
+            if (eff.trigger !== "on-hp-below" && eff.trigger !== "on-hp-above") return;
+            const threshold = eff.triggerValue ?? 50;
+            const shouldFire = eff.trigger === "on-hp-below" ? hpPct < threshold : hpPct >= threshold;
+            const se = statusEffects.find((s) => s.id === eff.effectId);
+            if (!se) return;
+            const charBuffs = buffsMap[charId] ?? [];
+            const hasBuff = charBuffs.some((b) => b.effectId === se.id && b.source === skill.name);
+
+            if (shouldFire) {
+              // Check once-per-battle
+              const onceKey = `${charId}:${skill.id}:${effIdx}`;
+              if (eff.once && firedOnceEffects.has(onceKey)) return;
+              if (hasBuff) return; // already active
+              if (eff.once) {
+                setFiredOnceEffects((prev) => new Set(prev).add(onceKey));
+              }
+              applyPassiveEffectBuff(charId, eff, skill, se);
+            } else if (!eff.once && hasBuff) {
+              // Condition no longer met — remove the buff (only for non-once effects)
+              setBuffsMap((prev) => ({
+                ...prev,
+                [charId]: (prev[charId] ?? []).filter((b) => !(b.effectId === se.id && b.source === skill.name)),
+              }));
+              addBattleLog(`${char.name} loses ${se.name} (${skill.name} condition no longer met).`);
+            }
+          });
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentHpMap, phase]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -662,12 +865,16 @@ export default function BattlefieldPage() {
     setSpeedOverrides({});
     setSelectedCharId(null);
     setViewedCharId(null);
-    // Initialize form map: each character starts with their first form
+    // Initialize form map: use staging selection or first startable form
     const formMap: Record<string, string> = {};
     for (const team of teams) {
       for (const p of team.placements) {
         const charForms = getFormsForCharacter(p.characterId);
-        if (charForms.length > 0) formMap[p.characterId] = charForms[0].id;
+        const stagingChoice = stagingFormMap[p.characterId];
+        const startableForm = charForms.find((f) => f.id === stagingChoice && f.startable !== false)
+          ?? charForms.find((f) => f.startable !== false)
+          ?? charForms[0];
+        if (startableForm) formMap[p.characterId] = startableForm.id;
       }
     }
     setBattleFormMap(formMap);
@@ -675,6 +882,7 @@ export default function BattlefieldPage() {
     setSkillLevelMap({});
     setTeamEnergy(generateTeamEnergy(formMap));
     setBattleLog([]);
+    setFiredOnceEffects(new Set());
     setPhase("battle");
   };
 
@@ -694,12 +902,19 @@ export default function BattlefieldPage() {
   };
 
   // Tick buffs for a specific character (called when their turn ends)
+  // Global turn identifier: buffs applied on this turn won't tick down until a future turn
+  const globalTurnId = round * 100 + currentTurnIndex;
+
   const tickBuffsForCharacter = (charId: string) => {
     setBuffsMap((prev) => {
       const charBuffs = prev[charId];
       if (!charBuffs || charBuffs.length === 0) return prev;
       const updated = charBuffs
-        .map((b) => b.duration <= 0 ? b : { ...b, duration: b.duration - 1 })
+        .map((b) => {
+          if (b.duration <= 0) return b; // permanent or already expired
+          if (b.appliedTurn === globalTurnId) return b; // applied this turn, skip ticking
+          return { ...b, duration: b.duration - 1 };
+        })
         .filter((b) => b.duration !== 0);
       return { ...prev, [charId]: updated };
     });
@@ -768,6 +983,8 @@ export default function BattlefieldPage() {
           modifier: !se.stats.includes("none") ? eff.modifier : 0,
           duration: eff.duration,
           source: skill.name,
+          sourceCharId: charId,
+          appliedTurn: globalTurnId,
           ...(se.tags ? { tags: se.tags } : {}),
           ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
         };
@@ -782,6 +999,7 @@ export default function BattlefieldPage() {
                   id: crypto.randomUUID(), effectId: grantEffect.id, effectName: grantEffect.name,
                   category: grantEffect.category, stats: grantEffect.stats,
                   modifier: grantEffect.defaultModifier ?? 0, duration: 1, source: grantEffect.name,
+                  appliedTurn: globalTurnId,
                   ...(grantEffect.tags ? { tags: grantEffect.tags } : {}),
                 };
                 addBattleLog(`${getCharacter(tid)?.name ?? "Unknown"} reaches max stacks! ${grantEffect.name} activated!`);
@@ -1179,6 +1397,8 @@ export default function BattlefieldPage() {
                   onClose={() => setSelectedCharId(null)}
                   onSelectSkill={setSelectedSkill}
                   charForms={getFormsForCharacter(selectedCharId)}
+                  selectedFormId={stagingFormMap[selectedCharId]}
+                  onSelectForm={(fid) => setStagingFormMap((prev) => ({ ...prev, [selectedCharId!]: fid }))}
                   onToggleEquip={async (charId, skillId) => {
                     const char = getCharacter(charId);
                     if (!char) return;
@@ -1221,6 +1441,21 @@ export default function BattlefieldPage() {
               const aResolved = resolveFormView(aChar, aFormId, skills, characterSkills, aBattleState);
               const hpPct = Math.max(0, Math.min(100, (aHp / aMaxHp) * 100));
               const hpColor = hpPct > 50 ? "bg-green-500" : hpPct > 25 ? "bg-yellow-500" : "bg-red-500";
+
+              // Check for status restrictions on the active character
+              const activeBuffs = buffsMap[activeCharId] ?? [];
+              const isStunned = activeBuffs.some((b) => b.tags?.some((t) => t.type === "skip-turn"));
+              const restrictedSkillTypes = (() => {
+                for (const b of activeBuffs) {
+                  if (!b.tags) continue;
+                  for (const t of b.tags) {
+                    if (t.type === "restrict-skills" && Array.isArray(t.params.allowed)) {
+                      return new Set(t.params.allowed as string[]);
+                    }
+                  }
+                }
+                return null; // no restriction
+              })();
 
               return (
                 <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2">
@@ -1287,6 +1522,8 @@ export default function BattlefieldPage() {
                       )) : 1;
                       const levelIdx = currentLevel - 1;
                       const maxLevel = 3;
+                      // Status restrictions: stunned = all disabled, silenced = only allowed types
+                      const isDisabledByStatus = isStunned || (restrictedSkillTypes !== null && !restrictedSkillTypes.has(type));
                       const typeLabel = type === "conditional" ? "COND" : type.toUpperCase();
                       const typeColor = type === "innate" ? "text-purple-400" : type === "basic" ? "text-blue-400" : type === "ability" ? "text-green-400" : "text-amber-400";
                       const isLeveled = canLevel && currentLevel > 1;
@@ -1301,15 +1538,17 @@ export default function BattlefieldPage() {
                       const isExpanded = expandedTemplateSkillId === skill.id;
 
                       return (
-                        <div key={skill.id} className={`w-24 ${bgClass} border rounded text-left transition-colors flex flex-col ${isExpanded ? "ring-1 ring-blue-400/50" : ""}`}>
+                        <div key={skill.id} className={`w-24 border rounded text-left transition-colors flex flex-col ${isExpanded ? "ring-1 ring-blue-400/50" : ""} ${isDisabledByStatus ? "opacity-40 pointer-events-none" : bgClass}`}>
                           <button
                             onClick={() => {
+                              if (isDisabledByStatus) return;
                               if (hasTemplate) {
                                 setExpandedTemplateSkillId(isExpanded ? null : skill.id);
                               } else {
                                 setSelectedSkill(skill);
                               }
                             }}
+                            disabled={isDisabledByStatus}
                             className="px-2 py-1 flex-1 flex flex-col"
                           >
                             <div className="flex items-center justify-between shrink-0">
@@ -1361,27 +1600,32 @@ export default function BattlefieldPage() {
                               ↑ Upgrade
                             </button>
                           )}
-                          {(
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                useSkillEnergy(skill.id);
-                                addBattleLog(`Round ${round}. ${aChar.name} uses ${skill.name}.`);
-                              }}
-                              disabled={!canAffordSkill(skill.id)}
-                              className={`w-full text-[8px] text-center py-0.5 font-medium border-t border-gray-700/50 transition-colors ${
-                                canAffordSkill(skill.id)
-                                  ? "bg-green-600/20 hover:bg-green-600/40 text-green-300"
-                                  : "bg-gray-800/50 text-gray-600 cursor-not-allowed"
-                              }`}
-                            >
-                              Use
-                            </button>
-                          )}
                         </div>
                       );
                     })}
+                    {/* Pass button */}
+                    <button
+                      onClick={() => {
+                        addBattleLog(`Round ${round}. ${aChar.name} passes their turn.`);
+                        if (isLastTurn) { endRound(); } else { nextTurn(); }
+                      }}
+                      className="w-16 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-center py-2 transition-colors"
+                    >
+                      <span className="text-[10px] text-gray-400 font-medium">Pass</span>
+                    </button>
                   </div>
+
+                  {/* Status restriction message */}
+                  {isStunned && (
+                    <div className="text-[10px] text-red-400 bg-red-900/20 rounded px-2 py-1 text-center">
+                      Stunned — cannot take actions
+                    </div>
+                  )}
+                  {!isStunned && restrictedSkillTypes !== null && (
+                    <div className="text-[10px] text-amber-400 bg-amber-900/20 rounded px-2 py-1 text-center">
+                      Silenced — can only use {Array.from(restrictedSkillTypes).join(", ")} skills
+                    </div>
+                  )}
 
                   {/* Expanded template actions */}
                   {expandedTemplateSkillId && (() => {
@@ -1406,7 +1650,7 @@ export default function BattlefieldPage() {
                     const isAllyTarget = targetType && ["target-ally", "target-ally-or-self", "adjacent-ally", "aoe-team", "random-ally"].includes(targetType);
                     const isSelfTarget = targetType === "self" || targetType === "target-ally-or-self";
                     const isEnemyTarget = targetType && ["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"].includes(targetType);
-                    const validTargets = allPlaced.filter((p) => {
+                    let validTargets = allPlaced.filter((p) => {
                       if (isAllyTarget) return p.side === attackerSideLocal && (isSelfTarget || p.charId !== activeCharId);
                       if (isSelfTarget && targetType === "self") return p.charId === activeCharId;
                       if (isEnemyTarget) return p.side !== attackerSideLocal;
@@ -1415,6 +1659,12 @@ export default function BattlefieldPage() {
                     // For self-only or ally-or-self, include self
                     if (isSelfTarget && !validTargets.some((t) => t.charId === activeCharId)) {
                       validTargets.unshift({ charId: activeCharId, side: attackerSideLocal ?? "left" });
+                    }
+                    // Apply force-target override
+                    const tmplAttackCat = getAttackCategory(targetType);
+                    const tmplForced = getForceTarget(buffsMap[activeCharId] ?? [], tmplAttackCat);
+                    if (tmplForced && isEnemyTarget && validTargets.some((t) => t.charId === tmplForced)) {
+                      validTargets = validTargets.filter((t) => t.charId === tmplForced);
                     }
 
                     const previewTarget = templatePreviewTargetId || validTargets[0]?.charId || "";
@@ -1477,34 +1727,6 @@ export default function BattlefieldPage() {
                                     )}
                                   </div>
                                 </button>
-                                {(
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!canAffordSpell || !activeCharId) return;
-                                      if (spellCost.length > 0) {
-                                        const charSide = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
-                                        if (!charSide) return;
-                                        setTeamEnergy((prev) => {
-                                          const sideEnergy = { ...(prev[charSide] ?? {}) };
-                                          for (const c of spellCost) {
-                                            sideEnergy[c.color] = (sideEnergy[c.color] ?? 0) - c.amount;
-                                          }
-                                          return { ...prev, [charSide]: sideEnergy };
-                                        });
-                                      }
-                                      addBattleLog(`Round ${round}. ${aChar.name} uses ${skill!.name}.`);
-                                    }}
-                                    disabled={!canAffordSpell}
-                                    className={`w-full text-[8px] text-center py-0.5 font-medium border-t border-gray-700/50 transition-colors ${
-                                      canAffordSpell
-                                        ? "bg-green-600/20 hover:bg-green-600/40 text-green-300"
-                                        : "bg-gray-800/50 text-gray-600 cursor-not-allowed"
-                                    }`}
-                                  >
-                                    Use
-                                  </button>
-                                )}
                               </div>
                             );
                           })}
@@ -1565,9 +1787,10 @@ export default function BattlefieldPage() {
                                             if (isLastTurn) { endRound(); } else { nextTurn(); }
                                           }
                                         }}
-                                        className={`mt-1 text-[10px] px-2 py-1 rounded text-white font-medium ${actionPreview.isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
+                                        disabled={!canAffordSkill(expandedTemplateSkillId!)}
+                                        className={`mt-1 text-[10px] px-2 py-1 rounded text-white font-medium ${!canAffordSkill(expandedTemplateSkillId!) ? "bg-gray-700 text-gray-500 cursor-not-allowed" : actionPreview.isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
                                       >
-                                        Apply and Use
+                                        {!canAffordSkill(expandedTemplateSkillId!) ? "Not Enough Energy" : "Apply and Use"}
                                       </button>
                                     )}
                                   </div>
@@ -1608,7 +1831,7 @@ export default function BattlefieldPage() {
                 onAddBuff={(charId, buff) => {
                   setBuffsMap((prev) => {
                     const existing = prev[charId] ?? [];
-                    const { buffs: updated, triggered } = applyBuffStacking(existing, buff);
+                    const { buffs: updated, triggered } = applyBuffStacking(existing, { ...buff, appliedTurn: globalTurnId });
                     if (triggered) {
                       // onMaxStacks triggered — look up the StatusEffect to grant
                       const grantEffect = statusEffects.find((se) => se.id === triggered);
@@ -1622,6 +1845,7 @@ export default function BattlefieldPage() {
                           modifier: grantEffect.defaultModifier ?? 0,
                           duration: 1,
                           source: grantEffect.name,
+                          appliedTurn: globalTurnId,
                           ...(grantEffect.tags ? { tags: grantEffect.tags } : {}),
                         };
                         addBattleLog(`${getCharacter(charId)?.name ?? "Unknown"} reaches max stacks! ${grantEffect.name} activated!`);
@@ -1661,7 +1885,7 @@ export default function BattlefieldPage() {
             </button>
           </div>
           <div className="max-h-40 overflow-y-auto p-2 space-y-0.5">
-            {battleLog.map((entry, i) => (
+            {[...battleLog].reverse().map((entry, i) => (
               <p key={i} className="text-[11px] text-gray-300">{entry}</p>
             ))}
           </div>
@@ -1686,6 +1910,7 @@ export default function BattlefieldPage() {
           skillLevelMap={phase === "battle" ? skillLevelMap : undefined}
           onClose={() => setSelectedSkill(null)}
           onViewSkill={setSelectedSkill}
+          canAfford={phase === "battle" ? canAffordSkill(selectedSkill.id) : undefined}
           onApplyDamage={phase === "battle" ? (targetId, newHp) => {
             setCurrentHpMap((prev) => ({ ...prev, [targetId]: newHp }));
           } : undefined}
@@ -1702,7 +1927,9 @@ export default function BattlefieldPage() {
             useSkillEnergy(skillUsed.id);
             // Log
             const attackerName = panelCharId ? getCharacter(panelCharId)?.name ?? "Unknown" : "Unknown";
-            if (targetEntries.length === 1) {
+            if (targetEntries.length === 0) {
+              addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name}.`);
+            } else if (targetEntries.length === 1) {
               const t = targetEntries[0];
               const targetName = getCharacter(t.targetId)?.name ?? "Unknown";
               const dmgText = t.isHealing
@@ -1720,6 +1947,7 @@ export default function BattlefieldPage() {
             // Apply skill effects (buff/debuff applications)
             const canLevel = (skillUsed.skillType === "ability" && skillUsed.leveled !== false) || (skillUsed.skillType === "conditional" && skillUsed.leveled);
             const lvlIdx = canLevel ? (skillLevelMap[skillUsed.id] ?? 1) - 1 : 0;
+            const isInstant = !!skillUsed.levels[lvlIdx]?.instant;
             const allLevelEffects = skillUsed.levels[lvlIdx]?.effects ?? [];
             const didDealDamage = targetEntries.length > 0 && !targetEntries[0]?.isHealing;
             // Filter effects by trigger: on-use always fires, on-attack-hit only if damage was dealt
@@ -1733,21 +1961,24 @@ export default function BattlefieldPage() {
               for (const eff of levelEffects) {
                 const se = statusEffects.find((s) => s.id === eff.effectId);
                 if (!se) continue;
-                // Roll chance
-                if (eff.chance !== undefined && eff.chance < 100) {
-                  const roll = Math.random() * 100;
-                  if (roll >= eff.chance) {
-                    addBattleLog(`${attackerName}'s ${se.name} missed! (${eff.chance}% chance)`);
-                    continue;
-                  }
-                }
                 // Resolve targets for this effect
-                const effTargets = resolveTargets(eff.targetType, panelCharId, teams, getCharacter);
-                const targetIds = effTargets.targets.map((t) => t.characterId);
-                // If the effect targets the same as the damage targets and there's only one, use that
-                const resolvedIds = targetIds.length > 0 ? targetIds
-                  : targetEntries.length > 0 ? targetEntries.map((t) => t.targetId)
-                  : [];
+                const enemyTargetTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"]);
+                const allyTargetTypes = new Set(["target-ally", "target-ally-or-self", "random-ally", "adjacent-ally", "aoe-team"]);
+                const skillTargetType = skillUsed.levels[lvlIdx]?.targetType;
+                const effIsEnemy = enemyTargetTypes.has(eff.targetType);
+                const effIsAlly = allyTargetTypes.has(eff.targetType);
+                const effIsSelf = eff.targetType === "self";
+                let resolvedIds: string[];
+                if (effIsSelf) {
+                  resolvedIds = panelCharId ? [panelCharId] : [];
+                } else if (effIsEnemy && targetEntries.length > 0 && skillTargetType && enemyTargetTypes.has(skillTargetType)) {
+                  resolvedIds = targetEntries.map((t) => t.targetId);
+                } else if (effIsAlly && targetEntries.length > 0 && skillTargetType && allyTargetTypes.has(skillTargetType)) {
+                  resolvedIds = targetEntries.map((t) => t.targetId);
+                } else {
+                  const effTargets = resolveTargets(eff.targetType, panelCharId!, teams, getCharacter);
+                  resolvedIds = effTargets.targets.map((t) => t.characterId);
+                }
                 const buff: Omit<BuffDebuff, "id"> = {
                   effectId: se.id,
                   effectName: se.name,
@@ -1756,10 +1987,20 @@ export default function BattlefieldPage() {
                   modifier: !se.stats.includes("none") ? eff.modifier : 0,
                   duration: eff.duration,
                   source: skillUsed.name,
+                  sourceCharId: panelCharId ?? undefined,
+                  ...(isInstant ? {} : { appliedTurn: globalTurnId }),
                   ...(se.tags ? { tags: se.tags } : {}),
                   ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
                 };
                 for (const tid of resolvedIds) {
+                  // Roll chance per target individually
+                  if (eff.chance !== undefined && eff.chance < 100) {
+                    const roll = Math.random() * 100;
+                    if (roll >= eff.chance) {
+                      addBattleLog(`${attackerName}'s ${se.name} missed ${getCharacter(tid)?.name ?? "Unknown"}! (${eff.chance}% chance)`);
+                      continue;
+                    }
+                  }
                   // Check status resistance (base + passive grants)
                   if (se.resistable) {
                     const targetChar = getCharacter(tid);
@@ -1782,7 +2023,14 @@ export default function BattlefieldPage() {
                     }
                   }
                   setBuffsMap((prev) => {
-                    const existing = prev[tid] ?? [];
+                    let existing = prev[tid] ?? [];
+                    // If applying a form-linked status, remove conflicting form-linked statuses
+                    if (se.formId) {
+                      existing = existing.filter((b) => {
+                        const bSe = statusEffects.find((s) => s.id === b.effectId);
+                        return !bSe?.formId || bSe.id === se.id;
+                      });
+                    }
                     const { buffs: updated, triggered } = applyBuffStacking(existing, buff);
                     if (triggered) {
                       const grantEffect = statusEffects.find((s) => s.id === triggered);
@@ -1791,6 +2039,7 @@ export default function BattlefieldPage() {
                           id: crypto.randomUUID(), effectId: grantEffect.id, effectName: grantEffect.name,
                           category: grantEffect.category, stats: grantEffect.stats,
                           modifier: grantEffect.defaultModifier ?? 0, duration: 1, source: grantEffect.name,
+                          appliedTurn: globalTurnId,
                           ...(grantEffect.tags ? { tags: grantEffect.tags } : {}),
                         };
                         addBattleLog(`${getCharacter(tid)?.name ?? "Unknown"} reaches max stacks! ${grantEffect.name} activated!`);
@@ -2030,6 +2279,9 @@ function BattleDetailsPanel({
               </div>
             );
           })()}
+
+          {/* Status Resistance */}
+          <StatusResistanceDisplay characterId={characterId} getCharacter={getCharacter} activeForm={charForms.find((f) => f.id === (activeFormId ?? charForms[0]?.id))} passiveGrants={passiveGrants} />
 
           {/* Buffs */}
           <BuffDebuffSection characterId={characterId} buffs={buffs} onAdd={(buff) => onAddBuff(characterId, buff)} onRemove={(buffId) => onRemoveBuff(characterId, buffId)} />
@@ -2380,6 +2632,9 @@ function BattleSidePanel({
         );
       })()}
 
+      {/* Status Resistance */}
+      <StatusResistanceDisplay characterId={characterId} getCharacter={getCharacter} activeForm={activeForm} passiveGrants={getPassiveResistanceGrants(char, formId, skills, characterSkills.filter((cs) => cs.characterId === characterId), {})} />
+
       {/* Innate */}
       <div>
         <span className="text-gray-500 font-medium text-[10px] uppercase">Innate</span>
@@ -2660,6 +2915,8 @@ function CharacterDetailPanel({
   characterSkills,
   isPlaced,
   charForms,
+  selectedFormId,
+  onSelectForm,
   onClose,
   onSelectSkill,
   onToggleEquip,
@@ -2670,6 +2927,8 @@ function CharacterDetailPanel({
   characterSkills: CharacterSkill[];
   isPlaced: boolean;
   charForms: Form[];
+  selectedFormId?: string;
+  onSelectForm?: (formId: string) => void;
   onClose: () => void;
   onSelectSkill: (skill: Skill) => void;
   onToggleEquip: (charId: string, skillId: string) => void;
@@ -2677,11 +2936,21 @@ function CharacterDetailPanel({
   const char = getCharacter(characterId);
   if (!char) return null;
 
+  // Resolve active form
+  const activeFormId = selectedFormId ?? charForms.find((f) => f.startable !== false)?.id ?? charForms[0]?.id ?? null;
+  const activeForm = charForms.find((f) => f.id === activeFormId);
+  const displayPhoto = activeForm?.photoUrl ?? char.photoUrl;
+  const displayType = activeForm?.typeOverride ?? char.type;
+  const displayEnergy = activeForm?.energyOverride ?? char.energyGeneration;
+  const displayStats = activeForm?.statOverrides ? { ...char.stats, ...activeForm.statOverrides } : char.stats;
+
   const lo = char.equippedLoadout;
   const charAssigns = characterSkills.filter((cs) => cs.characterId === characterId);
-  const charSkillIds = new Set(charAssigns.map((cs) => cs.skillId));
+  // Filter skills by form — only show skills available in the active form
+  const formFilteredAssigns = charAssigns.filter((cs) => cs.formId === null || cs.formId === activeFormId);
+  const formSkillIds = new Set(formFilteredAssigns.map((cs) => cs.skillId));
   const baseSkills = skills.filter(
-    (s) => charSkillIds.has(s.id) && s.skillType !== "conditional"
+    (s) => formSkillIds.has(s.id) && s.skillType !== "conditional"
   );
   const isSkillEquipped = (skill: Skill) => {
     if (skill.skillType === "innate") return lo.innateId === skill.id;
@@ -2698,9 +2967,9 @@ function CharacterDetailPanel({
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {char.photoUrl ? (
+          {displayPhoto ? (
             <img
-              src={char.photoUrl}
+              src={displayPhoto}
               alt={char.name}
               className="w-12 h-12 rounded-lg object-cover border border-gray-700"
             />
@@ -2714,10 +2983,10 @@ function CharacterDetailPanel({
             <div className="flex items-center gap-2 text-xs text-gray-400">
               {char.series && <span>{char.series}</span>}
               {char.series && <span className="text-gray-600">·</span>}
-              <span>{char.type}</span>
+              <span>{displayType}</span>
               <span className="text-gray-600">·</span>
               <span className="inline-flex gap-0.5">
-                {char.energyGeneration.map((eg) =>
+                {displayEnergy.map((eg) =>
                   Array.from({ length: eg.amount }).map((_, j) => (
                     <EnergyBadge key={`${eg.color}-${j}`} color={eg.color} />
                   ))
@@ -2738,14 +3007,41 @@ function CharacterDetailPanel({
         <p className="text-sm text-gray-400 italic">{char.summary}</p>
       )}
 
+      {/* Starting Form selector */}
+      {onSelectForm && charForms.filter((f) => f.startable !== false).length > 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-500 uppercase font-medium">Starting Form:</span>
+          <div className="flex gap-1">
+            {charForms.filter((f) => f.startable !== false).map((f) => (
+              <button
+                key={f.id}
+                onClick={() => onSelectForm(f.id)}
+                className={`text-[11px] px-2 py-1 rounded font-medium transition-colors ${
+                  (selectedFormId ?? charForms.find((ff) => ff.startable !== false)?.id) === f.id
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                {f.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-6 gap-2 max-w-sm">
-        {(["hp", "atk", "mAtk", "def", "spi", "spd"] as const).map((key) => (
-          <div key={key} className="text-center bg-gray-800 rounded p-1.5">
-            <div className="text-[10px] uppercase text-gray-500">{key}</div>
-            <div className="text-sm font-bold text-white">{char.stats[key]}</div>
-          </div>
-        ))}
+        {(["hp", "atk", "mAtk", "def", "spi", "spd"] as const).map((key) => {
+          const base = char.stats[key];
+          const display = displayStats[key];
+          const isOverridden = key !== "hp" && display !== base;
+          return (
+            <div key={key} className="text-center bg-gray-800 rounded p-1.5">
+              <div className="text-[10px] uppercase text-gray-500">{key}</div>
+              <div className={`text-sm font-bold ${isOverridden ? display > base ? "text-green-400" : "text-red-400" : "text-white"}`}>{display}</div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Skills */}
@@ -2754,33 +3050,6 @@ function CharacterDetailPanel({
         const label = type === "innate" ? "Innate" : type === "basic" ? "Basic" : "Abilities";
         const eqCount = type === "ability" ? lo.abilityIds.length : (type === "innate" ? (lo.innateId ? 1 : 0) : (lo.basicId ? 1 : 0));
         const maxEquip = type === "ability" ? 3 : 1;
-
-        if (isPlaced) {
-          const equipped = typeSkills.filter((s) => isSkillEquipped(s));
-          return (
-            <div key={type}>
-              <span className="text-gray-500 font-medium text-xs uppercase">
-                {label} ({eqCount}/{maxEquip})
-              </span>
-              {equipped.length === 0 ? (
-                <p className="text-xs text-gray-500 mt-1">None equipped</p>
-              ) : (
-                <div className="mt-1 space-y-1.5">
-                  {equipped.map((skill) => (
-                    <button key={skill.id} onClick={() => onSelectSkill(skill)}
-                      className="w-full text-left bg-gray-800 hover:bg-gray-700 rounded p-2 border border-transparent hover:border-gray-600 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-white">{skill.name}</span>
-                        {skill.levels[0].cost.length > 0 && <EnergyCostDisplay cost={skill.levels[0].cost} />}
-                      </div>
-                      <p className="text-xs text-gray-400 truncate mt-0.5">{skill.description || skill.levels[0].description ? <GlossaryText text={skill.description || skill.levels[0].description} /> : "(no description)"}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        }
 
         return (
           <div key={type}>
@@ -2838,6 +3107,7 @@ function SkillModal({
   onViewSkill,
   onApplyDamage,
   onApplyAndUse,
+  canAfford,
 }: {
   skill: Skill;
   allSkills: Skill[];
@@ -2856,6 +3126,7 @@ function SkillModal({
   skillLevelMap?: Record<string, number>;
   onApplyDamage?: (targetId: string, newHp: number) => void;
   onApplyAndUse?: (targets: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string }[], skill: Skill) => void;
+  canAfford?: boolean;
 }) {
   const { characterSkills: modalCharSkills } = useStore();
   const [previewTargetId, setPreviewTargetId] = useState<string>("");
@@ -3019,7 +3290,14 @@ function SkillModal({
           const level = skill.levels[effectiveLevel];
           if (!level?.damageCategory) return null;
 
-          const targeting = resolveTargets(level.targetType, attackerChar.id, modalTeams, getCharacterFn);
+          const rawTargeting = resolveTargets(level.targetType, attackerChar.id, modalTeams, getCharacterFn);
+          // Apply force-target override
+          const attackCategory = getAttackCategory(level.targetType);
+          const attackerBuffs = buffsMap?.[attackerChar.id] ?? [];
+          const forcedTargetId = getForceTarget(attackerBuffs, attackCategory);
+          const targeting = forcedTargetId && rawTargeting.mode === "dropdown" && rawTargeting.targets.some((t) => t.characterId === forcedTargetId)
+            ? { ...rawTargeting, targets: rawTargeting.targets.filter((t) => t.characterId === forcedTargetId) }
+            : rawTargeting;
           const isAoe = targeting.mode === "aoe";
           const isSelf = targeting.mode === "self";
 
@@ -3082,6 +3360,14 @@ function SkillModal({
                       </span>
                     </div>
                   )}
+                  {level.effects && level.effects.length > 0 && (
+                    <div className="space-y-0.5 border-t border-gray-700 pt-1 mt-1">
+                      <span className="text-[9px] text-purple-400 uppercase font-medium">Also Applies</span>
+                      {level.effects.map((eff, ei) => (
+                        <SkillEffectDisplay key={ei} effect={eff} />
+                      ))}
+                    </div>
+                  )}
                   {onApplyAndUse && results.length > 0 && (
                     <button
                       onClick={() => {
@@ -3094,9 +3380,10 @@ function SkillModal({
                         });
                         onApplyAndUse(entries, skill);
                       }}
-                      className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
+                      disabled={canAfford === false}
+                      className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${canAfford === false ? "bg-gray-700 text-gray-500 cursor-not-allowed" : isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
                     >
-                      Apply and Use
+                      {canAfford === false ? "Not Enough Energy" : "Apply and Use"}
                     </button>
                   )}
                 </div>
@@ -3136,9 +3423,10 @@ function SkillModal({
                             const newHp = result.isHealing ? Math.min(maxHp, cur + result.finalDamage) : Math.max(0, cur - result.finalDamage);
                             onApplyAndUse([{ targetId: selectedTarget, newHp, amount: result.finalDamage, isHealing: result.isHealing, category: level.damageCategory }], skill);
                           }}
-                          className={`text-[10px] px-2 py-1 rounded text-white font-medium ${result.isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
+                          disabled={canAfford === false}
+                          className={`text-[10px] px-2 py-1 rounded text-white font-medium ${canAfford === false ? "bg-gray-700 text-gray-500 cursor-not-allowed" : result.isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
                         >
-                          Apply and Use
+                          {canAfford === false ? "Not Enough Energy" : "Apply and Use"}
                         </button>
                       )}
                     </div>
@@ -3147,6 +3435,14 @@ function SkillModal({
                         <p key={i} className="text-[10px] text-gray-400">{line}</p>
                       ))}
                     </div>
+                    {level.effects && level.effects.length > 0 && (
+                      <div className="space-y-0.5 border-t border-gray-700 pt-1 mt-1">
+                        <span className="text-[9px] text-purple-400 uppercase font-medium">Also Applies</span>
+                        {level.effects.map((eff, ei) => (
+                          <SkillEffectDisplay key={ei} effect={eff} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3154,6 +3450,34 @@ function SkillModal({
           }
 
           return null;
+        })()}
+
+        {/* Effects-only Apply and Use (for skills with effects but no damage, like Provoke) */}
+        {attackerChar && modalTeams && getCharacterFn && onApplyAndUse && (() => {
+          const effectiveLevel = skillLevelMap ? currentSkillLevel - 1 : previewLevel;
+          const level = skill.levels[effectiveLevel];
+          const effects = level?.effects ?? [];
+          if (effects.length === 0) return null;
+          // If there's already a damage preview with Apply and Use, don't duplicate
+          if (level?.damageCategory) return null;
+
+          return (
+            <div className="border-t border-gray-800 pt-3 space-y-2">
+              <span className="text-[10px] text-gray-500 uppercase font-medium">Effects</span>
+              <div className="space-y-1">
+                {effects.map((eff, i) => (
+                  <SkillEffectDisplay key={i} effect={eff} />
+                ))}
+              </div>
+              <button
+                onClick={() => onApplyAndUse([], skill)}
+                disabled={canAfford === false}
+                className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${canAfford === false ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-500"}`}
+              >
+                {canAfford === false ? "Not Enough Energy" : "Apply and Use"}
+              </button>
+            </div>
+          );
         })()}
 
         <div className="pt-2 flex justify-end">

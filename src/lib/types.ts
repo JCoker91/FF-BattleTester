@@ -46,13 +46,15 @@ export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "no-target": "No Target",
 };
 
-export const EFFECT_TRIGGERS = ["on-use", "on-attack-hit", "turn-start"] as const;
+export const EFFECT_TRIGGERS = ["on-use", "on-attack-hit", "turn-start", "on-hp-below", "on-hp-above"] as const;
 export type EffectTrigger = (typeof EFFECT_TRIGGERS)[number];
 
 export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
   "on-use": "On Use",
   "on-attack-hit": "On Attack Hit",
   "turn-start": "Turn Start",
+  "on-hp-below": "On HP Below %",
+  "on-hp-above": "On HP At/Above %",
 };
 
 export interface SkillEffect {
@@ -62,6 +64,8 @@ export interface SkillEffect {
   duration: number; // turns
   chance?: number; // success chance %, defaults to 100
   trigger?: EffectTrigger; // when this effect fires, defaults to "on-use"
+  triggerValue?: number; // threshold for on-hp-below/on-hp-above (percentage)
+  once?: boolean; // if true, only fires once per battle
 }
 
 export interface ResistanceGrant {
@@ -157,6 +161,8 @@ export interface StatusEffect {
   onMaxStacks?: string; // StatusEffect ID to grant when max stacks reached
   resistable?: boolean; // if true, characters can have resistance
   tags?: EffectTag[]; // tagged effects
+  formId?: string; // if set, applying this status auto-switches the character to this form
+  dispellable?: boolean; // defaults to true — if false, cannot be removed by dispel effects
 }
 
 export interface CharacterSkill {
@@ -238,6 +244,7 @@ export interface Form {
   elementalResOverride?: Partial<ElementalValues>;
   elementalDmgOverride?: Partial<ElementalValues>;
   statusResistanceOverride?: Record<string, number>; // effectId → avoidance% override
+  startable?: boolean; // if false, cannot be selected as starting form in staging (default true)
   summary?: string;
 }
 
@@ -449,10 +456,12 @@ export interface BuffDebuff {
   duration: number; // turns remaining: -1 = permanent, >0 = turns left, 0 = expired
   tags?: EffectTag[]; // tagged effects from StatusEffect
   source: string; // skill name — matching key for stacking
+  sourceCharId?: string; // who applied this buff (needed for force-target, block-target)
   stackable?: boolean; // inherited from StatusEffect
   maxStacks?: number; // inherited from StatusEffect
   stacks?: number; // current stack count (default 1)
   onMaxStacks?: string; // StatusEffect ID to grant when max stacks reached
+  appliedTurn?: number; // turn index when this buff was applied (skip ticking on same turn)
 }
 
 export interface DamageResult {
