@@ -13,7 +13,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { useStore } from "@/lib/store";
-import { Character, CharacterType, CHARACTER_TYPES, CharacterSkill, Skill, SkillLevel, SkillEffect, SkillTemplate, TemplateAction, Team, PlacedCharacter, EnergyColor, ENERGY_COLORS, EnergyGeneration, SKILL_TYPE_LABELS, ELEMENTS, ELEMENT_ICONS, ELEMENT_LABELS, TARGET_TYPE_LABELS, Form, BuffDebuff, BattleState, DamageResult, StatusEffect, resolveFormView, toggleEquipLoadout } from "@/lib/types";
+import { Character, CharacterType, CHARACTER_TYPES, CharacterSkill, Skill, SkillLevel, SkillEffect, SkillTemplate, TemplateAction, Team, PlacedCharacter, EnergyColor, ENERGY_COLORS, EnergyGeneration, SKILL_TYPE_LABELS, ELEMENTS, ELEMENT_ICONS, ELEMENT_LABELS, TARGET_TYPE_LABELS, Form, BuffDebuff, BattleState, DamageResult, StatusEffect, ResistanceGrant, Element, resolveFormView, toggleEquipLoadout } from "@/lib/types";
 import { DAMAGE_TIER_LABELS, DAMAGE_CATEGORY_LABELS, DamageTier } from "@/lib/damage-config";
 import { calculateDamage } from "@/lib/damage-calc";
 import { resolveTargets, TargetResolution } from "@/lib/targeting";
@@ -75,6 +75,56 @@ function getBuffModifier(buffs: BuffDebuff[], stat: string): number {
   return buffs
     .filter((b) => b.stats.includes(stat))
     .reduce((sum, b) => sum + b.modifier * (b.stacks ?? 1), 0);
+}
+
+/**
+ * Collect all passive resistance grants from a character's equipped skills.
+ * Returns grants from skills whose active level has `passive: true`.
+ */
+function getPassiveResistanceGrants(
+  char: Character,
+  activeFormId: string | null,
+  allSkills: Skill[],
+  charAssignments: CharacterSkill[],
+  skillLevelMap: Record<string, number>,
+): ResistanceGrant[] {
+  const resolved = resolveFormView(char, activeFormId, allSkills, charAssignments);
+  const allResolved = [resolved.innate, resolved.basic, ...resolved.abilities, ...resolved.conditionals].filter(Boolean) as Skill[];
+  const grants: ResistanceGrant[] = [];
+  for (const skill of allResolved) {
+    const canLevel = (skill.skillType === "ability" && skill.leveled !== false) || (skill.skillType === "conditional" && skill.leveled);
+    const lvlIdx = canLevel ? (skillLevelMap[skill.id] ?? 1) - 1 : 0;
+    const level = skill.levels[lvlIdx];
+    if (level?.passive && level.resistanceGrants) {
+      grants.push(...level.resistanceGrants);
+    }
+  }
+  return grants;
+}
+
+/**
+ * Get the total passive status resistance bonus for a given status effect.
+ */
+function getPassiveStatusResistance(grants: ResistanceGrant[], effectId: string): number {
+  return grants
+    .filter((g) => g.type === "status" && g.targetId === effectId)
+    .reduce((sum, g) => sum + g.value, 0);
+}
+
+/**
+ * Apply passive elemental resistance grants to a base elemental resistance object.
+ */
+function applyPassiveElementalGrants(
+  baseElemRes: Record<string, number>,
+  grants: ResistanceGrant[],
+): Record<string, number> {
+  const eleGrants = grants.filter((g) => g.type === "elemental");
+  if (eleGrants.length === 0) return baseElemRes;
+  const result = { ...baseElemRes };
+  for (const g of eleGrants) {
+    result[g.targetId] = (result[g.targetId] ?? 100) + g.value;
+  }
+  return result;
 }
 
 function SkillEffectDisplay({ effect }: { effect: SkillEffect }) {
@@ -683,6 +733,70 @@ export default function BattlefieldPage() {
         }
       }
     }
+
+    // Apply turn-start effects from equipped passive skills
+    const formId = battleFormMap[charId] ?? null;
+    const charAssigns = characterSkills.filter((cs) => cs.characterId === charId);
+    const resolved = resolveFormView(char, formId, skills, charAssigns);
+    const equippedSkills = [resolved.innate, resolved.basic, ...resolved.abilities, ...resolved.conditionals].filter(Boolean) as Skill[];
+    for (const skill of equippedSkills) {
+      const canLevel = (skill.skillType === "ability" && skill.leveled !== false) || (skill.skillType === "conditional" && skill.leveled);
+      const lvlIdx = canLevel ? (skillLevelMap[skill.id] ?? 1) - 1 : 0;
+      const level = skill.levels[lvlIdx];
+      if (!level?.passive) continue;
+      const turnStartEffects = (level.effects ?? []).filter((eff) => eff.trigger === "turn-start");
+      for (const eff of turnStartEffects) {
+        const se = statusEffects.find((s) => s.id === eff.effectId);
+        if (!se) continue;
+        // Roll chance
+        if (eff.chance !== undefined && eff.chance < 100) {
+          const roll = Math.random() * 100;
+          if (roll >= eff.chance) {
+            addBattleLog(`${char.name}'s ${skill.name}: ${se.name} missed! (${eff.chance}% chance)`);
+            continue;
+          }
+        }
+        // Resolve targets
+        const effTargets = resolveTargets(eff.targetType, charId, teams, getCharacter);
+        const targetIds = effTargets.targets.map((t) => t.characterId);
+        const resolvedIds = targetIds.length > 0 ? targetIds : [charId];
+        const buff: Omit<BuffDebuff, "id"> = {
+          effectId: se.id,
+          effectName: se.name,
+          category: se.category,
+          stats: se.stats,
+          modifier: !se.stats.includes("none") ? eff.modifier : 0,
+          duration: eff.duration,
+          source: skill.name,
+          ...(se.tags ? { tags: se.tags } : {}),
+          ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
+        };
+        for (const tid of resolvedIds) {
+          setBuffsMap((prev) => {
+            const existing = prev[tid] ?? [];
+            const { buffs: updated, triggered } = applyBuffStacking(existing, buff);
+            if (triggered) {
+              const grantEffect = statusEffects.find((s) => s.id === triggered);
+              if (grantEffect) {
+                const grantBuff: BuffDebuff = {
+                  id: crypto.randomUUID(), effectId: grantEffect.id, effectName: grantEffect.name,
+                  category: grantEffect.category, stats: grantEffect.stats,
+                  modifier: grantEffect.defaultModifier ?? 0, duration: 1, source: grantEffect.name,
+                  ...(grantEffect.tags ? { tags: grantEffect.tags } : {}),
+                };
+                addBattleLog(`${getCharacter(tid)?.name ?? "Unknown"} reaches max stacks! ${grantEffect.name} activated!`);
+                return { ...prev, [tid]: [...updated, grantBuff] };
+              }
+            }
+            return { ...prev, [tid]: updated };
+          });
+          const tName = getCharacter(tid)?.name ?? "Unknown";
+          const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
+          addBattleLog(`${char.name}'s ${skill.name}: ${se.name}${modText} applied to ${tName}.`);
+        }
+      }
+    }
+
     return skipTurn;
   };
 
@@ -1318,10 +1432,12 @@ export default function BattlefieldPage() {
                         const dFormId2 = battleFormMap[targetChar.id] ?? null;
                         const dForm2 = dFormId2 ? getFormsForCharacter(targetChar.id).find((f) => f.id === dFormId2) : null;
                         const dStats2 = dForm2?.statOverrides ? { ...targetChar.stats, ...dForm2.statOverrides } : targetChar.stats;
-                        const dElemRes2 = dForm2?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm2.elementalResOverride } : targetChar.elementalResistance;
+                        const dElemRes2Base = dForm2?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm2.elementalResOverride } : targetChar.elementalResistance;
+                        const dPassiveGrants2 = getPassiveResistanceGrants(targetChar, dFormId2, skills, characterSkills.filter((cs) => cs.characterId === targetChar.id), skillLevelMap);
+                        const dElemRes2 = applyPassiveElementalGrants(dElemRes2Base, dPassiveGrants2);
                         actionPreview = calculateDamage(
                           { stats: aStats2, elementalResistance: aChar2.elementalResistance, elementalDamage: aElemDmg2, buffs: buffsMap[activeCharId] ?? [] },
-                          { stats: dStats2, elementalResistance: dElemRes2, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[targetChar.id] ?? [] },
+                          { stats: dStats2, elementalResistance: dElemRes2 as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[targetChar.id] ?? [] },
                           selSkill.levels[0]
                         );
                       }
@@ -1483,6 +1599,7 @@ export default function BattlefieldPage() {
                 charForms={getFormsForCharacter(viewedCharId)}
                 activeFormId={battleFormMap[viewedCharId] ?? null}
                 buffs={buffsMap[viewedCharId] ?? []}
+                skillLevelMap={skillLevelMap}
                 onSetFormId={(fid) => setBattleFormMap((prev) => ({ ...prev, [viewedCharId]: fid }))}
                 onSelectSkill={setSelectedSkill}
                 onSetHp={(charId, hp) =>
@@ -1603,7 +1720,15 @@ export default function BattlefieldPage() {
             // Apply skill effects (buff/debuff applications)
             const canLevel = (skillUsed.skillType === "ability" && skillUsed.leveled !== false) || (skillUsed.skillType === "conditional" && skillUsed.leveled);
             const lvlIdx = canLevel ? (skillLevelMap[skillUsed.id] ?? 1) - 1 : 0;
-            const levelEffects = skillUsed.levels[lvlIdx]?.effects ?? [];
+            const allLevelEffects = skillUsed.levels[lvlIdx]?.effects ?? [];
+            const didDealDamage = targetEntries.length > 0 && !targetEntries[0]?.isHealing;
+            // Filter effects by trigger: on-use always fires, on-attack-hit only if damage was dealt
+            const levelEffects = allLevelEffects.filter((eff) => {
+              const t = eff.trigger ?? "on-use";
+              if (t === "on-use") return true;
+              if (t === "on-attack-hit") return didDealDamage;
+              return false; // turn-start effects are handled separately
+            });
             if (levelEffects.length > 0 && panelCharId) {
               for (const eff of levelEffects) {
                 const se = statusEffects.find((s) => s.id === eff.effectId);
@@ -1635,6 +1760,27 @@ export default function BattlefieldPage() {
                   ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
                 };
                 for (const tid of resolvedIds) {
+                  // Check status resistance (base + passive grants)
+                  if (se.resistable) {
+                    const targetChar = getCharacter(tid);
+                    if (targetChar) {
+                      const baseRes = targetChar.statusResistance?.[se.id] ?? 0;
+                      const tFormId = battleFormMap[tid] ?? null;
+                      const tForm = tFormId ? getFormsForCharacter(tid).find((f) => f.id === tFormId) : null;
+                      const formRes = tForm?.statusResistanceOverride?.[se.id];
+                      const effectiveBaseRes = formRes ?? baseRes;
+                      const passiveGrants = getPassiveResistanceGrants(targetChar, tFormId, skills, characterSkills, skillLevelMap);
+                      const passiveRes = getPassiveStatusResistance(passiveGrants, se.id);
+                      const totalRes = Math.min(100, effectiveBaseRes + passiveRes);
+                      if (totalRes > 0) {
+                        const roll = Math.random() * 100;
+                        if (roll < totalRes) {
+                          addBattleLog(`${targetChar.name} resisted ${se.name}! (${totalRes}% resistance)`);
+                          continue;
+                        }
+                      }
+                    }
+                  }
                   setBuffsMap((prev) => {
                     const existing = prev[tid] ?? [];
                     const { buffs: updated, triggered } = applyBuffStacking(existing, buff);
@@ -1687,6 +1833,7 @@ function BattleDetailsPanel({
   charForms,
   activeFormId,
   buffs,
+  skillLevelMap,
   onSetFormId,
   onSelectSkill,
   onSetHp,
@@ -1705,6 +1852,7 @@ function BattleDetailsPanel({
   charForms: Form[];
   activeFormId: string | null;
   buffs: BuffDebuff[];
+  skillLevelMap: Record<string, number>;
   onSetFormId: (formId: string) => void;
   onSelectSkill: (skill: Skill) => void;
   onSetHp: (charId: string, hp: number) => void;
@@ -1727,13 +1875,15 @@ function BattleDetailsPanel({
   const hpPct = Math.max(0, Math.min(100, (currentHp / maxHp) * 100));
   const hpColor = hpPct > 50 ? "bg-green-500" : hpPct > 25 ? "bg-yellow-500" : "bg-red-500";
 
-  const panelElemRes = activeForm?.elementalResOverride ? { ...char.elementalResistance, ...activeForm.elementalResOverride } : char.elementalResistance;
+  const passiveGrants = getPassiveResistanceGrants(char, formId, skills, characterSkills.filter((cs) => cs.characterId === char.id), skillLevelMap);
+  const panelElemResBase = activeForm?.elementalResOverride ? { ...char.elementalResistance, ...activeForm.elementalResOverride } : char.elementalResistance;
+  const panelElemRes = applyPassiveElementalGrants(panelElemResBase, passiveGrants);
   const panelElemDmg = activeForm?.elementalDmgOverride ? { ...char.elementalDamage, ...activeForm.elementalDmgOverride } : char.elementalDamage;
 
   const buffedElemRes: Record<string, number> = {};
   const buffedElemDmg: Record<string, number> = {};
   for (const elem of ELEMENTS) {
-    buffedElemRes[elem] = panelElemRes[elem] + getBuffModifier(buffs, `eleRes.${elem}`);
+    buffedElemRes[elem] = (panelElemRes[elem] ?? 100) + getBuffModifier(buffs, `eleRes.${elem}`);
     buffedElemDmg[elem] = panelElemDmg[elem] + getBuffModifier(buffs, `eleDmg.${elem}`);
   }
 
@@ -2707,6 +2857,7 @@ function SkillModal({
   onApplyDamage?: (targetId: string, newHp: number) => void;
   onApplyAndUse?: (targets: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string }[], skill: Skill) => void;
 }) {
+  const { characterSkills: modalCharSkills } = useStore();
   const [previewTargetId, setPreviewTargetId] = useState<string>("");
   const currentSkillLevel = skillLevelMap?.[skill.id] ?? 1;
   const [previewLevel, setPreviewLevel] = useState(currentSkillLevel - 1);
@@ -2885,8 +3036,10 @@ function SkillModal({
             const dFormId = battleFormMap?.[targetId];
             const dForm = dFormId && getFormsForCharacter ? getFormsForCharacter(targetId).find((f) => f.id === dFormId) : null;
             const dStats = dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats;
-            const dElemRes = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
-            return calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes, elementalDamage: targetChar.elementalDamage, buffs: buffsMap?.[targetId] ?? [] }, level);
+            const dElemResBase = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
+            const dPassiveGrants = getPassiveResistanceGrants(targetChar, dFormId ?? null, allSkills, modalCharSkills.filter((cs) => cs.characterId === targetId), skillLevelMap ?? {});
+            const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
+            return calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap?.[targetId] ?? [] }, level);
           };
 
           const applyToTarget = (targetId: string, result: DamageResult) => {

@@ -1,9 +1,14 @@
 import Database from "better-sqlite3";
 import path from "path";
+import fs from "fs";
 import { Character, Skill, CharacterSkill, Team, Form, FormLoadout, GlossaryEntry, SkillTemplate, TemplateAction, StatusEffect, EffectTagType, DEFAULT_ELEMENTAL, ElementalValues } from "./types";
 import { v4 as uuid } from "uuid";
 
-const dbPath = path.join(process.cwd(), "data", "playtester.db");
+const dataDir = path.join(process.cwd(), "data");
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+const dbPath = path.join(dataDir, "playtester.db");
 const db = new Database(dbPath);
 
 db.pragma("journal_mode = WAL");

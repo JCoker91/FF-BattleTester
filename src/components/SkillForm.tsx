@@ -5,6 +5,7 @@ import {
   Skill,
   SkillLevel,
   SkillEffect,
+  ResistanceGrant,
   SkillType,
   EnergyCost,
   ENERGY_COLORS,
@@ -13,12 +14,16 @@ import {
   ELEMENTS,
   ELEMENT_LABELS,
   ELEMENT_ICONS,
+  Element,
   EnergyColor,
   SkillTemplate,
   TARGET_TYPES,
   TARGET_TYPE_LABELS,
   TargetType,
   StatusEffect,
+  EFFECT_TRIGGERS,
+  EFFECT_TRIGGER_LABELS,
+  EffectTrigger,
 } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import { DAMAGE_CATEGORIES, DAMAGE_CATEGORY_LABELS, DAMAGE_TIERS, DAMAGE_TIER_LABELS } from "@/lib/damage-config";
@@ -59,6 +64,7 @@ function EffectsEditor({
   const [modifier, setModifier] = useState(20);
   const [duration, setDuration] = useState(2);
   const [chance, setChance] = useState(100);
+  const [trigger, setTrigger] = useState<EffectTrigger>("on-use");
 
   const isEditing = editIdx !== null;
   const showForm = adding || isEditing;
@@ -72,6 +78,7 @@ function EffectsEditor({
     setModifier(e.modifier);
     setDuration(e.duration);
     setChance(e.chance ?? 100);
+    setTrigger(e.trigger ?? "on-use");
   };
 
   const resetForm = () => {
@@ -81,6 +88,7 @@ function EffectsEditor({
     setModifier(20);
     setDuration(2);
     setChance(100);
+    setTrigger("on-use");
   };
 
   const handleSave = () => {
@@ -91,6 +99,7 @@ function EffectsEditor({
       modifier,
       duration,
       ...(chance < 100 ? { chance } : {}),
+      ...(trigger !== "on-use" ? { trigger } : {}),
     };
     if (isEditing && editIdx !== null) {
       onChange(effects.map((e, i) => (i === editIdx ? entry : e)));
@@ -140,6 +149,9 @@ function EffectsEditor({
                 )}
                 <span className="text-gray-600">{e.duration}t</span>
                 <span className="text-gray-500 text-[10px]">{TARGET_TYPE_LABELS[e.targetType]}</span>
+                {e.trigger && e.trigger !== "on-use" && (
+                  <span className="text-sky-400 text-[10px]">{EFFECT_TRIGGER_LABELS[e.trigger]}</span>
+                )}
                 {e.chance !== undefined && e.chance < 100 && (
                   <span className="text-amber-400 text-[10px]">{e.chance}% chance</span>
                 )}
@@ -186,6 +198,15 @@ function EffectsEditor({
                 <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
               ))}
             </select>
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+              value={trigger}
+              onChange={(e) => setTrigger(e.target.value as EffectTrigger)}
+            >
+              {EFFECT_TRIGGERS.map((t) => (
+                <option key={t} value={t}>{EFFECT_TRIGGER_LABELS[t]}</option>
+              ))}
+            </select>
           </div>
           <div className="flex gap-1.5 items-center flex-wrap">
             {selectedEffect && !selectedEffect.stats.includes("none") && (
@@ -226,6 +247,156 @@ function EffectsEditor({
             <button
               onClick={handleSave}
               disabled={!effectId}
+              className="text-[10px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+            >
+              {isEditing ? "Save" : "Add"}
+            </button>
+            <button onClick={resetForm} className="text-[10px] px-2 py-0.5 rounded bg-gray-700 text-gray-300">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResistanceGrantsEditor({
+  grants,
+  statusEffects,
+  onChange,
+}: {
+  grants: ResistanceGrant[];
+  statusEffects: StatusEffect[];
+  onChange: (grants: ResistanceGrant[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [grantType, setGrantType] = useState<"status" | "elemental">("status");
+  const [targetId, setTargetId] = useState("");
+  const [value, setValue] = useState(50);
+
+  const isEditing = editIdx !== null;
+  const showForm = adding || isEditing;
+
+  const resistableEffects = statusEffects.filter((se) => se.resistable);
+
+  const startEdit = (i: number) => {
+    const g = grants[i];
+    setEditIdx(i);
+    setAdding(false);
+    setGrantType(g.type);
+    setTargetId(g.targetId);
+    setValue(g.value);
+  };
+
+  const resetForm = () => {
+    setAdding(false);
+    setEditIdx(null);
+    setTargetId("");
+    setValue(50);
+  };
+
+  const handleSave = () => {
+    if (!targetId) return;
+    const entry: ResistanceGrant = { type: grantType, targetId, value };
+    if (isEditing && editIdx !== null) {
+      onChange(grants.map((g, i) => (i === editIdx ? entry : g)));
+    } else {
+      onChange([...grants, entry]);
+    }
+    resetForm();
+  };
+
+  const getLabel = (g: ResistanceGrant) => {
+    if (g.type === "status") {
+      const se = statusEffects.find((s) => s.id === g.targetId);
+      return se?.name ?? "Unknown";
+    }
+    return ELEMENT_LABELS[g.targetId as Element] ?? g.targetId;
+  };
+
+  return (
+    <div className="border-t border-gray-800 pt-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-cyan-400 font-medium uppercase">Resistance Grants</span>
+        {!showForm && (
+          <button
+            onClick={() => { setAdding(true); setEditIdx(null); }}
+            className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400"
+          >
+            + Add Resistance
+          </button>
+        )}
+      </div>
+
+      {grants.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {grants.map((g, i) => {
+            if (editIdx === i) return null;
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] bg-gray-800/50 rounded px-2 py-0.5">
+                <span className="text-[9px] text-gray-500 uppercase">{g.type}</span>
+                <span className="font-medium text-cyan-400">{getLabel(g)}</span>
+                <span className="text-gray-400">+{g.value}%</span>
+                <button onClick={() => startEdit(i)} className="ml-auto text-gray-600 hover:text-blue-400 text-[10px]">edit</button>
+                <button onClick={() => onChange(grants.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 text-[10px]">x</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="mt-1 bg-gray-800 rounded p-2 space-y-1.5">
+          {isEditing && <span className="text-[9px] text-blue-400 font-medium">Editing resistance grant</span>}
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+              value={grantType}
+              onChange={(e) => { setGrantType(e.target.value as "status" | "elemental"); setTargetId(""); }}
+            >
+              <option value="status">Status Resistance</option>
+              <option value="elemental">Elemental Resistance</option>
+            </select>
+            {grantType === "status" ? (
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+              >
+                <option value="">Select status...</option>
+                {resistableEffects.map((se) => (
+                  <option key={se.id} value={se.id}>{se.name}</option>
+                ))}
+              </select>
+            ) : (
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+              >
+                <option value="">Select element...</option>
+                {ELEMENTS.map((el) => (
+                  <option key={el} value={el}>{ELEMENT_ICONS[el]} {ELEMENT_LABELS[el]}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="flex gap-1.5 items-center">
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              +
+              <input
+                type="number"
+                className="w-12 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                value={value}
+                onChange={(e) => setValue(parseInt(e.target.value) || 0)}
+              />
+              %
+            </label>
+          </div>
+          <div className="flex gap-1.5">
+            <button
+              onClick={handleSave}
+              disabled={!targetId}
               className="text-[10px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
             >
               {isEditing ? "Save" : "Add"}
@@ -397,6 +568,15 @@ export function SkillForm({
                 />
                 <span className="text-[10px] text-yellow-400 font-medium">Instant</span>
               </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!level.passive}
+                  onChange={(e) => updateLevel(i, { passive: e.target.checked || undefined })}
+                  className="rounded bg-gray-800 border-gray-700 text-cyan-600 focus:ring-cyan-500 w-3 h-3"
+                />
+                <span className="text-[10px] text-cyan-400 font-medium">While Equipped</span>
+              </label>
               <div className="flex items-center gap-1">
                 <span className="text-[10px] text-gray-500">Dmg Type:</span>
                 <select
@@ -437,6 +617,40 @@ export function SkillForm({
                       <option key={el} value={el}>{ELEMENT_ICONS[el]} {ELEMENT_LABELS[el]}</option>
                     ))}
                   </select>
+                </div>
+              )}
+              {level.damageCategory === "physical" && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Ignore DEF:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                    value={level.ignoreDefense ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                      updateLevel(i, { ignoreDefense: v || undefined });
+                    }}
+                  />
+                  <span className="text-[10px] text-gray-500">%</span>
+                </div>
+              )}
+              {level.damageCategory === "magical" && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Ignore SPI:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                    value={level.ignoreSpirit ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                      updateLevel(i, { ignoreSpirit: v || undefined });
+                    }}
+                  />
+                  <span className="text-[10px] text-gray-500">%</span>
                 </div>
               )}
               <div className="flex items-center gap-1">
@@ -495,6 +709,12 @@ export function SkillForm({
               statusEffects={statusEffects}
               onChange={(effects) => updateLevel(i, { effects: effects.length > 0 ? effects : undefined })}
             />
+            {/* Resistance grants (for passive skills) */}
+            <ResistanceGrantsEditor
+              grants={level.resistanceGrants ?? []}
+              statusEffects={statusEffects}
+              onChange={(grants) => updateLevel(i, { resistanceGrants: grants.length > 0 ? grants : undefined })}
+            />
             {/* Per-level template link */}
             {isAbility && templates && templates.length > 0 && (
               <div className="flex items-center gap-2">
@@ -534,6 +754,15 @@ export function SkillForm({
                 className="rounded bg-gray-800 border-gray-700 text-blue-600 focus:ring-blue-500 w-3 h-3"
               />
               <span className="text-[10px] text-yellow-400 font-medium">Instant</span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!form.levels[0].passive}
+                onChange={(e) => updateLevel(0, { passive: e.target.checked || undefined })}
+                className="rounded bg-gray-800 border-gray-700 text-cyan-600 focus:ring-cyan-500 w-3 h-3"
+              />
+              <span className="text-[10px] text-cyan-400 font-medium">While Equipped</span>
             </label>
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-gray-500">Dmg Type:</span>
@@ -577,6 +806,40 @@ export function SkillForm({
                 </select>
               </div>
             )}
+            {form.levels[0].damageCategory === "physical" && (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-500">Ignore DEF:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                  value={form.levels[0].ignoreDefense ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                    updateLevel(0, { ignoreDefense: v || undefined });
+                  }}
+                />
+                <span className="text-[10px] text-gray-500">%</span>
+              </div>
+            )}
+            {form.levels[0].damageCategory === "magical" && (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-500">Ignore SPI:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                  value={form.levels[0].ignoreSpirit ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                    updateLevel(0, { ignoreSpirit: v || undefined });
+                  }}
+                />
+                <span className="text-[10px] text-gray-500">%</span>
+              </div>
+            )}
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-gray-500">Target:</span>
               <select
@@ -596,6 +859,12 @@ export function SkillForm({
             effects={form.levels[0].effects ?? []}
             statusEffects={statusEffects}
             onChange={(effects) => updateLevel(0, { effects: effects.length > 0 ? effects : undefined })}
+          />
+          {/* Resistance grants for basic/innate */}
+          <ResistanceGrantsEditor
+            grants={form.levels[0].resistanceGrants ?? []}
+            statusEffects={statusEffects}
+            onChange={(grants) => updateLevel(0, { resistanceGrants: grants.length > 0 ? grants : undefined })}
           />
         </div>
       )}

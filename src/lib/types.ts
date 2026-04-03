@@ -46,12 +46,28 @@ export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "no-target": "No Target",
 };
 
+export const EFFECT_TRIGGERS = ["on-use", "on-attack-hit", "turn-start"] as const;
+export type EffectTrigger = (typeof EFFECT_TRIGGERS)[number];
+
+export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
+  "on-use": "On Use",
+  "on-attack-hit": "On Attack Hit",
+  "turn-start": "Turn Start",
+};
+
 export interface SkillEffect {
   effectId: string; // → StatusEffect.id
   targetType: TargetType; // who receives this effect
   modifier: number; // % modifier
   duration: number; // turns
   chance?: number; // success chance %, defaults to 100
+  trigger?: EffectTrigger; // when this effect fires, defaults to "on-use"
+}
+
+export interface ResistanceGrant {
+  type: "status" | "elemental"; // what kind of resistance
+  targetId: string; // StatusEffect.id (for status) or Element name (for elemental)
+  value: number; // % resistance to add (e.g. +50 = 50% more resistance)
 }
 
 export interface SkillLevel {
@@ -60,11 +76,15 @@ export interface SkillLevel {
   costNote?: string; // describes variable/flexible cost behavior
   templateId?: string | null;
   instant?: boolean;
+  passive?: boolean; // "while equipped" — effects auto-apply permanently while skill is equipped
   damageCategory?: "physical" | "magical" | "true" | "healing";
   damageTier?: string;
   element?: Element;
   targetType?: TargetType;
+  ignoreDefense?: number; // % of target's DEF to ignore (0-100), physical attacks only
+  ignoreSpirit?: number; // % of target's SPI to ignore (0-100), magical attacks only
   effects?: SkillEffect[]; // buff/debuff applications
+  resistanceGrants?: ResistanceGrant[]; // passive resistance bonuses (status or elemental)
 }
 
 export const SKILL_TYPES = ["innate", "basic", "ability", "conditional"] as const;

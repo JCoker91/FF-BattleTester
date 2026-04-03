@@ -108,6 +108,15 @@ export function calculateDamage(
     breakdown.push(`SPI: ${defender.stats.spi} → ${defensiveStat.toFixed(1)} (after buffs)`);
   }
 
+  // Apply ignore defense / ignore spirit (reduces effective DEF or SPI for this hit only)
+  const ignorePct = category === "physical" ? (skillLevel.ignoreDefense ?? 0) : category === "magical" ? (skillLevel.ignoreSpirit ?? 0) : 0;
+  if (ignorePct > 0) {
+    const label = category === "physical" ? "DEF" : "SPI";
+    const before = defensiveStat;
+    defensiveStat = Math.max(1, defensiveStat * (1 - ignorePct / 100));
+    breakdown.push(`Ignore ${label}: ${ignorePct}% — ${label} ${before.toFixed(1)} → ${defensiveStat.toFixed(1)}`);
+  }
+
   // ATK/DEF ratio (true damage uses flat 1.0 ratio)
   const ratio = isHealing ? offensiveStat / 50 : isTrue ? 1.0 : offensiveStat / defensiveStat;
   breakdown.push(`Ratio: ${ratio.toFixed(2)}`);
