@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, useLayoutEffect } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -361,7 +361,7 @@ function GridCell({
   switchHighlight?: boolean;
   onSwitchClick?: () => void;
   animClass?: string;
-  damageFloats?: { id: string; amount: number; isHealing: boolean }[];
+  damageFloats?: { id: string; text: string; color: string }[];
 }) {
   const charHp = character && hpMap ? {
     currentHp: hpMap[character.id] ?? character.stats.hp,
@@ -385,7 +385,7 @@ function GridCell({
       style={{ position: "relative" }}
     >
       {character ? (
-        <div className={animClass ? `animate-${animClass}` : undefined} style={{ position: "relative" }}>
+        <div data-char-id={character.id} className={animClass ? `animate-${animClass}` : undefined} style={{ position: "relative" }}>
           <DraggableCharacter
             character={character}
             source={`${side}-${row}-${col}`}
@@ -400,10 +400,10 @@ function GridCell({
               {damageFloats.map((d) => (
                 <div
                   key={d.id}
-                  className={`animate-damage-float text-lg font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${d.isHealing ? "text-green-300" : "text-red-400"}`}
+                  className={`animate-damage-float text-base font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${d.color}`}
                   style={{ position: "absolute", left: 0, top: 0, whiteSpace: "nowrap" }}
                 >
-                  {d.isHealing ? "+" : "-"}{d.amount}
+                  {d.text}
                 </div>
               ))}
             </div>
@@ -663,18 +663,50 @@ export default function BattlefieldPage() {
   const [teleportRequest, setTeleportRequest] = useState<{ charId: string; destSide: string; instant?: boolean } | null>(null);
   // Tracks instant skills used this round: charId -> Set of skillIds
   const [instantUsedMap, setInstantUsedMap] = useState<Record<string, string[]>>({});
-  // Floating damage/heal numbers per character
-  const [damageFloats, setDamageFloats] = useState<{ id: string; charId: string; amount: number; isHealing: boolean }[]>([]);
+  // Floating combat text (damage, heal, status label) per character
+  type CombatFloat = { id: string; charId: string; text: string; color: string };
+  const [damageFloats, setDamageFloats] = useState<CombatFloat[]>([]);
+  // Per-char scheduling cursor so stacked floats don't overlap — absolute ms timestamp
+  const floatScheduleRef = useRef<Record<string, number>>({});
+  // FLIP-style position transitions for characters moving between grid cells
+  const lastRectsRef = useRef<Record<string, { left: number; top: number }>>({});
+  // Ref to the middle column — its height drives the side columns' heights
+  const middleColRef = useRef<HTMLDivElement | null>(null);
+  const [middleColHeight, setMiddleColHeight] = useState<number | null>(null);
   // Animation state: charId -> css class ("sling-right" etc.)
   const [animMap, setAnimMap] = useState<Record<string, string>>({});
+  const spawnFloat = useCallback((charId: string, text: string, color: string) => {
+    const now = Date.now();
+    const next = Math.max(now, floatScheduleRef.current[charId] ?? 0);
+    const delay = next - now;
+    floatScheduleRef.current[charId] = next + 260;
+    const id = crypto.randomUUID();
+    const show = () => {
+      setDamageFloats((prev) => [...prev, { id, charId, text, color }]);
+      setTimeout(() => {
+        setDamageFloats((prev) => prev.filter((d) => d.id !== id));
+      }, 1400);
+    };
+    if (delay > 0) setTimeout(show, delay); else show();
+  }, []);
   const spawnDamageFloat = useCallback((charId: string, amount: number, isHealing: boolean) => {
     if (amount <= 0) return;
-    const id = crypto.randomUUID();
-    setDamageFloats((prev) => [...prev, { id, charId, amount, isHealing }]);
-    setTimeout(() => {
-      setDamageFloats((prev) => prev.filter((d) => d.id !== id));
-    }, 1400);
-  }, []);
+    spawnFloat(charId, `${isHealing ? "+" : "-"}${amount}`, isHealing ? "text-green-300" : "text-red-400");
+  }, [spawnFloat]);
+  const spawnStatusFloat = useCallback((charId: string, stats: string[], modifier: number, category: string, effectName: string, stackable?: boolean) => {
+    // Stackable buffs or statless effects show the effect name
+    if (stackable || stats.length === 0 || stats.includes("none")) {
+      const color = category === "buff" ? "text-green-300" : category === "debuff" ? "text-red-300" : "text-yellow-300";
+      spawnFloat(charId, effectName, color);
+      return;
+    }
+    // Otherwise show one float per stat
+    const sign = modifier > 0 ? "+" : modifier < 0 ? "-" : "";
+    const color = modifier > 0 ? "text-green-300" : modifier < 0 ? "text-red-300" : "text-yellow-300";
+    for (const s of stats) {
+      spawnFloat(charId, `${s.toUpperCase()}${sign}`, color);
+    }
+  }, [spawnFloat]);
   const triggerAnim = useCallback((charId: string, cls: string, durationMs: number) => {
     setAnimMap((prev) => ({ ...prev, [charId]: cls }));
     setTimeout(() => {
@@ -762,6 +794,57 @@ export default function BattlefieldPage() {
 
   // Reset switch mode when turn changes
   useEffect(() => { setSwitchMode(false); }, [currentTurnIndex, round]);
+
+  // Observe the middle column size and propagate its height to the side columns so
+  // the battle log & details panel match the battlefield + active character panel.
+  useEffect(() => {
+    const el = middleColRef.current;
+    if (!el) return;
+    const update = () => setMiddleColHeight(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [phase]);
+
+  // FLIP animation: when characters move between grid cells, smoothly transition from their old position to the new one.
+  useLayoutEffect(() => {
+    const nodes = document.querySelectorAll<HTMLElement>("[data-char-id]");
+    const newRects: Record<string, { left: number; top: number }> = {};
+    nodes.forEach((node) => {
+      const id = node.getAttribute("data-char-id");
+      if (!id) return;
+      const rect = node.getBoundingClientRect();
+      newRects[id] = { left: rect.left, top: rect.top };
+    });
+    const prev = lastRectsRef.current;
+    nodes.forEach((node) => {
+      const id = node.getAttribute("data-char-id");
+      if (!id) return;
+      const last = prev[id];
+      const curr = newRects[id];
+      if (!last || !curr) return;
+      const dx = last.left - curr.left;
+      const dy = last.top - curr.top;
+      // Ignore sub-cell drift from unrelated layout shifts (e.g. HP bars resizing, log growing).
+      // Grid cells are ~96px wide so any real move is much larger than this threshold.
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+      // "Invert": jump the element back to where it was, then transition it to zero.
+      node.style.transition = "none";
+      node.style.transform = `translate(${dx}px, ${dy}px)`;
+      // Force reflow so the transition picks up the new transform.
+      void node.offsetHeight;
+      node.style.transition = "transform 360ms cubic-bezier(0.22, 1, 0.36, 1)";
+      node.style.transform = "translate(0, 0)";
+      const clear = () => {
+        node.style.transition = "";
+        node.style.transform = "";
+        node.removeEventListener("transitionend", clear);
+      };
+      node.addEventListener("transitionend", clear);
+    });
+    lastRectsRef.current = newRects;
+  }, [teams]);
 
   // Auto-skip defeated characters when their turn comes up
   useEffect(() => {
@@ -1817,8 +1900,31 @@ export default function BattlefieldPage() {
         </DndContext>
       ) : (
         <div className="flex gap-4 items-start">
-          {/* Left column: Battlefield (top) + Active character (bottom) */}
-          <div className="shrink-0 space-y-3">
+          {/* Column 1: Battle Log — height synced to column 2, scrolls internally */}
+          <div
+            className="shrink-0 w-[280px] bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col min-h-0"
+            style={middleColHeight ? { height: middleColHeight } : undefined}
+          >
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 shrink-0">
+              <span className="text-xs text-gray-400 font-medium">Battle Log</span>
+              <button
+                onClick={() => setBattleLog([])}
+                className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 scrollbar-thin">
+              {[...battleLog].reverse().map((entry, i) => (
+                <p key={i} className="text-[11px] text-gray-300">{entry}</p>
+              ))}
+              {battleLog.length === 0 && (
+                <p className="text-[11px] text-gray-600 italic">No events yet.</p>
+              )}
+            </div>
+          </div>
+          {/* Column 2: Battlefield (top) + Active character (bottom) — fixed width; its height drives columns 1 and 3 */}
+          <div ref={middleColRef} className="shrink-0 space-y-3 w-[720px]">
             {/* Battlefield grid */}
             <div>
               <EnergyPool
@@ -1910,14 +2016,9 @@ export default function BattlefieldPage() {
                     )}
                   </div>
 
-                  {/* Skills row */}
-                  <div className="flex gap-1.5 flex-wrap">
-                    {[
-                      ...(aResolved.innate ? [{ skill: aResolved.innate, type: "innate" as const }] : []),
-                      ...(aResolved.basic ? [{ skill: aResolved.basic, type: "basic" as const }] : []),
-                      ...aResolved.abilities.map((s) => ({ skill: s, type: "ability" as const })),
-                      ...aResolved.conditionals.map((s) => ({ skill: s, type: "conditional" as const })),
-                    ].map(({ skill, type }) => {
+                  {/* Skills panel: Innate + Basic stacked in column 1, abilities/conditionals wrap in column 2, Switch/Pass in column 3 */}
+                  {(() => {
+                    const renderSkillTile = ({ skill, type }: { skill: Skill; type: "innate" | "basic" | "ability" | "conditional" }) => {
                       const isConditional = type === "conditional";
                       const canLevel = (type === "ability" && skill.leveled !== false) || (isConditional && skill.leveled);
                       const skillAssign = characterSkills.find((cs) => cs.characterId === activeCharId && cs.skillId === skill.id);
@@ -2015,35 +2116,59 @@ export default function BattlefieldPage() {
                           )}
                         </div>
                       );
-                    })}
-                    {/* Switch button */}
-                    <button
-                      onClick={() => setSwitchMode((m) => !m)}
-                      disabled={isSwitchBlocked || isStunned}
-                      title={isSwitchBlocked ? "Cannot switch — restricted by status" : isStunned ? "Cannot act — stunned" : undefined}
-                      className={`w-16 border rounded text-center py-2 transition-colors ${
-                        isSwitchBlocked || isStunned
-                          ? "bg-gray-900 border-gray-800 cursor-not-allowed opacity-50"
-                          : switchMode
-                          ? "bg-green-600 border-green-500 hover:bg-green-700"
-                          : "bg-gray-800 hover:bg-gray-700 border-gray-700"
-                      }`}
-                    >
-                      <span className={`text-[10px] font-medium ${switchMode ? "text-white" : "text-gray-400"}`}>
-                        {switchMode ? "Cancel" : "Switch"}
-                      </span>
-                    </button>
-                    {/* Pass button */}
-                    <button
-                      onClick={() => {
-                        addBattleLog(`Round ${round}. ${aChar.name} passes their turn.`);
-                        if (isLastTurn) { endRound(); } else { nextTurn(); }
-                      }}
-                      className="w-16 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-center py-2 transition-colors"
-                    >
-                      <span className="text-[10px] text-gray-400 font-medium">Pass</span>
-                    </button>
-                  </div>
+                    };
+
+                    const otherSkills: { skill: Skill; type: "ability" | "conditional" }[] = [
+                      ...aResolved.abilities.map((s) => ({ skill: s, type: "ability" as const })),
+                      ...aResolved.conditionals.map((s) => ({ skill: s, type: "conditional" as const })),
+                    ];
+
+                    return (
+                      <div className="flex flex-col gap-1.5">
+                        {/* Row 1: Innate */}
+                        {aResolved.innate && (
+                          <div className="flex gap-1.5">
+                            {renderSkillTile({ skill: aResolved.innate, type: "innate" })}
+                          </div>
+                        )}
+                        {/* Row 2: Basic + Switch + Pass (everything that costs no energy) */}
+                        <div className="flex gap-1.5 items-stretch">
+                          {aResolved.basic && renderSkillTile({ skill: aResolved.basic, type: "basic" })}
+                          <button
+                            onClick={() => setSwitchMode((m) => !m)}
+                            disabled={isSwitchBlocked || isStunned}
+                            title={isSwitchBlocked ? "Cannot switch — restricted by status" : isStunned ? "Cannot act — stunned" : undefined}
+                            className={`w-24 border rounded text-center transition-colors ${
+                              isSwitchBlocked || isStunned
+                                ? "bg-gray-900 border-gray-800 cursor-not-allowed opacity-50"
+                                : switchMode
+                                ? "bg-green-600 border-green-500 hover:bg-green-700"
+                                : "bg-gray-800 hover:bg-gray-700 border-gray-700"
+                            }`}
+                          >
+                            <span className={`text-[10px] font-medium ${switchMode ? "text-white" : "text-gray-400"}`}>
+                              {switchMode ? "Cancel" : "Switch"}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              addBattleLog(`Round ${round}. ${aChar.name} passes their turn.`);
+                              if (isLastTurn) { endRound(); } else { nextTurn(); }
+                            }}
+                            className="w-24 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-center transition-colors"
+                          >
+                            <span className="text-[10px] text-gray-400 font-medium">Pass</span>
+                          </button>
+                        </div>
+                        {/* Row 3: Abilities + Conditionals wrapping */}
+                        {otherSkills.length > 0 && (
+                          <div className="flex gap-1.5 flex-wrap">
+                            {otherSkills.map(({ skill, type }) => renderSkillTile({ skill, type }))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Status restriction message */}
                   {isStunned && (
@@ -2496,8 +2621,11 @@ export default function BattlefieldPage() {
             })()}
           </div>
 
-          {/* Right column: Selected character details (full height) */}
-          <div className="flex-1 min-w-0">
+          {/* Column 3: Selected character details — height synced to column 2, scrolls internally */}
+          <div
+            className="shrink-0 w-[420px] overflow-y-auto scrollbar-thin"
+            style={middleColHeight ? { height: middleColHeight } : undefined}
+          >
             {viewedCharId ? (
               <BattleDetailsPanel
                 characterId={viewedCharId}
@@ -2557,26 +2685,6 @@ export default function BattlefieldPage() {
                 Click a character on the battlefield to view their details
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Battle Log */}
-      {phase === "battle" && battleLog.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800">
-            <span className="text-xs text-gray-400 font-medium">Battle Log</span>
-            <button
-              onClick={() => setBattleLog([])}
-              className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors"
-            >
-              Clear
-            </button>
-          </div>
-          <div className="max-h-40 overflow-y-auto p-2 space-y-0.5">
-            {[...battleLog].reverse().map((entry, i) => (
-              <p key={i} className="text-[11px] text-gray-300">{entry}</p>
-            ))}
           </div>
         </div>
       )}
@@ -3426,6 +3534,16 @@ export default function BattlefieldPage() {
                   const tName = getCharacter(tid)?.name ?? "Unknown";
                   const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
                   addBattleLog(`${se.name}${modText} applied to ${tName} for ${eff.duration} turns.`);
+                  // Floating status label + self-buff flash.
+                  // Delay so status labels appear after the damage number when this skill dealt damage.
+                  const statusDelay = hasDamageHit ? 360 : 0;
+                  const targetCharId = tid;
+                  setTimeout(() => {
+                    spawnStatusFloat(targetCharId, se.stats, eff.modifier, se.category, se.name, se.stackable);
+                  }, statusDelay);
+                  if (tid === activeCharId && se.category !== "debuff") {
+                    triggerAnim(tid, "self-buff", 700);
+                  }
                 }
               }
             }
