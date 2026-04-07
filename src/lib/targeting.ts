@@ -66,12 +66,17 @@ export function resolveTargets(
       return { mode: "dropdown", targets: toTargetInfo(enemies) };
 
     case "front-row-enemy": {
-      // Find the frontmost occupied column for the enemy side
-      // Front = col 0 (closest to the divider)
+      // For each row (lane), find the frontmost (lowest col) enemy.
+      // If a lane only has a back-row enemy, that enemy is still considered "front" since nothing protects it.
       if (enemies.length === 0) return { mode: "dropdown", targets: [] };
-      const minCol = Math.min(...enemies.map((e) => e.position.col));
-      const frontRow = enemies.filter((e) => e.position.col === minCol);
-      return { mode: "dropdown", targets: toTargetInfo(frontRow) };
+      const frontByRow = new Map<number, PlacedUnit>();
+      for (const e of enemies) {
+        const existing = frontByRow.get(e.position.row);
+        if (!existing || e.position.col < existing.position.col) {
+          frontByRow.set(e.position.row, e);
+        }
+      }
+      return { mode: "dropdown", targets: toTargetInfo(Array.from(frontByRow.values())) };
     }
 
     case "aoe-enemy":

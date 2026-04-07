@@ -105,7 +105,8 @@ db.exec(`
     max_stacks INTEGER DEFAULT NULL,
     on_max_stacks TEXT DEFAULT NULL,
     resistable INTEGER NOT NULL DEFAULT 0,
-    behavior TEXT DEFAULT NULL
+    behavior TEXT DEFAULT NULL,
+    polarity TEXT DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS effect_tag_types (
@@ -133,20 +134,20 @@ if (tagCount.c === 0) {
     ["skip-turn", "Skip Turn", "Target cannot take any actions on their turn", {}, 2],
     ["miss-chance", "Miss Chance", "Outgoing attacks have a chance to miss, dealing no damage and not applying effects", {
       percent: { type: "number", label: "Miss %", default: 50 },
-      filter: { type: "enum", label: "Attack Filter", options: ["direct", "aoe", "any"], default: "direct" },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
     }, 3],
     ["dodge-chance", "Dodge Chance", "Incoming attacks have a chance to miss this character", {
       percent: { type: "number", label: "Dodge %", default: 50 },
-      filter: { type: "enum", label: "Attack Filter", options: ["direct", "aoe", "any"], default: "direct" },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
     }, 4],
     ["redirect-random", "Redirect Random", "Outgoing direct attacks are redirected to a random character (ally or enemy)", {
-      filter: { type: "enum", label: "Attack Filter", options: ["direct", "aoe", "any"], default: "direct" },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
     }, 5],
     ["force-target", "Force Target", "Outgoing direct attacks must target the source of this effect", {
-      filter: { type: "enum", label: "Attack Filter", options: ["direct", "aoe", "any"], default: "direct" },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
     }, 6],
     ["block-target", "Block Target", "Cannot attack the source of this effect with direct attacks", {
-      filter: { type: "enum", label: "Attack Filter", options: ["direct", "aoe", "any"], default: "direct" },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
     }, 7],
     ["restrict-skills", "Restrict Skills", "Limits which skill types can be used", {
       allowed: { type: "string[]", label: "Allowed Types", options: ["innate", "basic", "ability", "conditional"], default: ["basic"] },
@@ -157,10 +158,76 @@ if (tagCount.c === 0) {
     }, 9],
     ["invert-healing", "Invert Healing", "Healing effects deal damage instead", {}, 10],
     ["removed-on-damage", "Removed on Damage", "This status is removed when the character takes damage", {}, 11],
-    ["eject", "Eject", "Character is removed from the battlefield for the duration", {}, 12],
+    ["cover", "Cover", "Takes damage in place of allies whose HP is below the threshold", {
+      hpThreshold: { type: "number", label: "Ally HP Below %", default: 50 },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
+      damageCategory: { type: "enum", label: "Damage Category", options: ["physical", "magical", "any"], default: "any" },
+    }, 13],
+    ["counter", "Counter", "When taking damage, automatically counter-attacks the source with the character's basic attack", {
+      damageCategory: { type: "enum", label: "Damage Category", options: ["physical", "magical", "any"], default: "physical" },
+      filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" },
+    }, 14],
+    ["restrict-switch", "Restrict Switch", "Prevents the affected character from using the Switch command on their turn", {}, 15],
   ];
   for (const [name, label, desc, schema, order] of tags) {
     insertTag.run(uuid(), name, label, desc, JSON.stringify(schema), order);
+  }
+}
+// Ensure new tag types are added to existing databases
+const existingTagNames = new Set((db.prepare("SELECT name FROM effect_tag_types").all() as { name: string }[]).map((r) => r.name));
+if (!existingTagNames.has("cover")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "cover", "Cover", "Takes damage in place of allies whose HP is below the threshold",
+    JSON.stringify({ hpThreshold: { type: "number", label: "Ally HP Below %", default: 50 }, filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" } }), 13
+  );
+}
+// Remove deprecated eject tag from existing databases
+db.prepare("DELETE FROM effect_tag_types WHERE name = 'eject'").run();
+
+if (!existingTagNames.has("counter")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "counter", "Counter", "When taking damage, automatically counter-attacks the source with the character's basic attack",
+    JSON.stringify({ damageCategory: { type: "enum", label: "Damage Category", options: ["physical", "magical", "any"], default: "physical" }, filter: { type: "enum", label: "Attack Filter", options: ["direct", "indirect", "aoe", "any"], default: "direct" } }), 14
+  );
+}
+if (!existingTagNames.has("restrict-switch")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "restrict-switch", "Restrict Switch", "Prevents the affected character from using the Switch command on their turn",
+    JSON.stringify({}), 15
+  );
+}
+if (!existingTagNames.has("faster-target-bonus")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "faster-target-bonus", "Faster Target Bonus", "While equipped, deals bonus damage to targets with lower SPD than the attacker",
+    JSON.stringify({ percent: { type: "number", label: "Bonus %", default: 10 } }), 16
+  );
+}
+
+// Update existing cover tag to include damageCategory param
+const coverRow = db.prepare("SELECT id, param_schema FROM effect_tag_types WHERE name = 'cover'").get() as { id: string; param_schema: string } | undefined;
+if (coverRow) {
+  const schema = JSON.parse(coverRow.param_schema);
+  let changed = false;
+  if (!schema.damageCategory) {
+    schema.damageCategory = { type: "enum", label: "Damage Category", options: ["physical", "magical", "any"], default: "any" };
+    changed = true;
+  }
+  if (!schema.allyGender) {
+    schema.allyGender = { type: "enum", label: "Ally Gender", options: ["any", "male", "female", "other"], default: "any" };
+    changed = true;
+  }
+  if (changed) {
+    db.prepare("UPDATE effect_tag_types SET param_schema = ? WHERE id = ?").run(JSON.stringify(schema), coverRow.id);
+  }
+}
+
+// Update filter options on existing tag types to include "indirect"
+const filterTags = db.prepare("SELECT id, param_schema FROM effect_tag_types WHERE param_schema LIKE '%Attack Filter%'").all() as { id: string; param_schema: string }[];
+for (const ft of filterTags) {
+  const schema = JSON.parse(ft.param_schema);
+  if (schema.filter?.options && !schema.filter.options.includes("indirect")) {
+    schema.filter.options = ["direct", "indirect", "aoe", "any"];
+    db.prepare("UPDATE effect_tag_types SET param_schema = ? WHERE id = ?").run(JSON.stringify(schema), ft.id);
   }
 }
 
@@ -181,6 +248,9 @@ const charColumns = db
   .all() as { name: string }[];
 if (!charColumns.some((c) => c.name === "summary")) {
   db.exec("ALTER TABLE characters ADD COLUMN summary TEXT NOT NULL DEFAULT ''");
+}
+if (!charColumns.some((c) => c.name === "gender")) {
+  db.exec("ALTER TABLE characters ADD COLUMN gender TEXT DEFAULT NULL");
 }
 if (!charColumns.some((c) => c.name === "equipped_innate_id")) {
   db.exec("ALTER TABLE characters ADD COLUMN equipped_innate_id TEXT DEFAULT NULL");
@@ -312,6 +382,9 @@ if (seColumns.length > 0 && !seColumns.some((c) => c.name === "form_id")) {
 }
 if (seColumns.length > 0 && !seColumns.some((c) => c.name === "dispellable")) {
   db.exec("ALTER TABLE status_effects ADD COLUMN dispellable INTEGER NOT NULL DEFAULT 1");
+}
+if (seColumns.length > 0 && !seColumns.some((c) => c.name === "polarity")) {
+  db.exec("ALTER TABLE status_effects ADD COLUMN polarity TEXT DEFAULT NULL");
 }
 
 // forms: startable column
@@ -449,6 +522,7 @@ interface CharacterRow {
   elemental_resistance: string | null;
   elemental_damage: string | null;
   status_resistance: string | null;
+  gender: string | null;
 }
 
 function rowToCharacter(row: CharacterRow): Character {
@@ -483,6 +557,7 @@ function rowToCharacter(row: CharacterRow): Character {
     statusResistance: row.status_resistance ? JSON.parse(row.status_resistance) : {},
     photoUrl: row.photo_url ?? undefined,
     summary: row.summary || undefined,
+    gender: (row.gender ?? undefined) as Character["gender"],
   };
 }
 
@@ -500,8 +575,8 @@ export function insertCharacter(data: Omit<Character, "id">): { character: Chara
   const formId = uuid();
   // Create the character
   db.prepare(
-    `INSERT INTO characters (id, name, series, type, energy_generation, stats, photo_url, summary, equipped_loadouts, elemental_resistance, elemental_damage, status_resistance)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO characters (id, name, series, type, energy_generation, stats, photo_url, summary, equipped_loadouts, elemental_resistance, elemental_damage, status_resistance, gender)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     charId, data.name, data.series, data.type,
     JSON.stringify(data.energyGeneration), JSON.stringify(data.stats),
@@ -509,7 +584,8 @@ export function insertCharacter(data: Omit<Character, "id">): { character: Chara
     JSON.stringify({ innateId: null, basicId: null, abilityIds: [] }),
     JSON.stringify(data.elementalResistance),
     JSON.stringify(data.elementalDamage),
-    JSON.stringify(data.statusResistance ?? {})
+    JSON.stringify(data.statusResistance ?? {}),
+    data.gender ?? null
   );
   // Create the Base form
   db.prepare("INSERT INTO forms (id, character_id, name, sort_order) VALUES (?, ?, ?, ?)").run(formId, charId, "Base", 0);
@@ -520,7 +596,7 @@ export function insertCharacter(data: Omit<Character, "id">): { character: Chara
 
 export function updateCharacterDb(char: Character): void {
   db.prepare(
-    `UPDATE characters SET name = ?, series = ?, type = ?, energy_generation = ?, stats = ?, photo_url = ?, summary = ?, equipped_loadouts = ?, elemental_resistance = ?, elemental_damage = ?, status_resistance = ?
+    `UPDATE characters SET name = ?, series = ?, type = ?, energy_generation = ?, stats = ?, photo_url = ?, summary = ?, equipped_loadouts = ?, elemental_resistance = ?, elemental_damage = ?, status_resistance = ?, gender = ?
      WHERE id = ?`
   ).run(
     char.name, char.series, char.type,
@@ -530,6 +606,7 @@ export function updateCharacterDb(char: Character): void {
     JSON.stringify(char.elementalResistance),
     JSON.stringify(char.elementalDamage),
     JSON.stringify(char.statusResistance ?? {}),
+    char.gender ?? null,
     char.id
   );
 }
@@ -847,6 +924,7 @@ interface StatusEffectRow {
   tags: string | null;
   form_id: string | null;
   dispellable: number;
+  polarity: string | null;
 }
 
 function rowToStatusEffect(row: StatusEffectRow): StatusEffect {
@@ -854,6 +932,7 @@ function rowToStatusEffect(row: StatusEffectRow): StatusEffect {
     id: row.id,
     name: row.name,
     category: row.category as "buff" | "debuff" | "status",
+    polarity: (row.polarity as "positive" | "negative" | null) ?? undefined,
     stats: JSON.parse(row.stats),
     defaultModifier: row.default_modifier ?? undefined,
     stackable: row.stackable === 1 ? true : undefined,
@@ -873,7 +952,7 @@ export function getAllStatusEffects(): StatusEffect[] {
 export function insertStatusEffect(data: Omit<StatusEffect, "id">): StatusEffect {
   const id = uuid();
   db.prepare(
-    "INSERT INTO status_effects (id, name, category, stats, default_modifier, stackable, max_stacks, on_max_stacks, resistable, tags, form_id, dispellable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO status_effects (id, name, category, stats, default_modifier, stackable, max_stacks, on_max_stacks, resistable, tags, form_id, dispellable, polarity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(
     id, data.name, data.category, JSON.stringify(data.stats),
     data.defaultModifier ?? null,
@@ -883,14 +962,15 @@ export function insertStatusEffect(data: Omit<StatusEffect, "id">): StatusEffect
     data.resistable ? 1 : 0,
     data.tags ? JSON.stringify(data.tags) : null,
     data.formId ?? null,
-    data.dispellable === false ? 0 : 1
+    data.dispellable === false ? 0 : 1,
+    data.polarity ?? null
   );
   return { ...data, id };
 }
 
 export function updateStatusEffectDb(effect: StatusEffect): void {
   db.prepare(
-    "UPDATE status_effects SET name = ?, category = ?, stats = ?, default_modifier = ?, stackable = ?, max_stacks = ?, on_max_stacks = ?, resistable = ?, tags = ?, form_id = ?, dispellable = ? WHERE id = ?"
+    "UPDATE status_effects SET name = ?, category = ?, stats = ?, default_modifier = ?, stackable = ?, max_stacks = ?, on_max_stacks = ?, resistable = ?, tags = ?, form_id = ?, dispellable = ?, polarity = ? WHERE id = ?"
   ).run(
     effect.name, effect.category, JSON.stringify(effect.stats),
     effect.defaultModifier ?? null,
@@ -901,6 +981,7 @@ export function updateStatusEffectDb(effect: StatusEffect): void {
     effect.tags ? JSON.stringify(effect.tags) : null,
     effect.formId ?? null,
     effect.dispellable === false ? 0 : 1,
+    effect.polarity ?? null,
     effect.id
   );
 }

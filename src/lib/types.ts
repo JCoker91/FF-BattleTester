@@ -46,11 +46,12 @@ export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "no-target": "No Target",
 };
 
-export const EFFECT_TRIGGERS = ["on-use", "on-attack-hit", "turn-start", "on-hp-below", "on-hp-above"] as const;
+export const EFFECT_TRIGGERS = ["on-use", "while-equipped", "on-attack-hit", "turn-start", "on-hp-below", "on-hp-above"] as const;
 export type EffectTrigger = (typeof EFFECT_TRIGGERS)[number];
 
 export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
   "on-use": "On Use",
+  "while-equipped": "While Equipped",
   "on-attack-hit": "On Attack Hit",
   "turn-start": "Turn Start",
   "on-hp-below": "On HP Below %",
@@ -66,12 +67,53 @@ export interface SkillEffect {
   trigger?: EffectTrigger; // when this effect fires, defaults to "on-use"
   triggerValue?: number; // threshold for on-hp-below/on-hp-above (percentage)
   once?: boolean; // if true, only fires once per battle
+  untilNextTurn?: boolean; // "until next turn": buff does not tick on the caster's current turn even if the skill is instant — it survives until the caster's next turn then expires
+}
+
+export interface RandomEffectPool {
+  pickCount: number; // how many effects to randomly select from the pool (no duplicates)
+  effects: SkillEffect[]; // candidate effects
 }
 
 export interface ResistanceGrant {
   type: "status" | "elemental"; // what kind of resistance
   targetId: string; // StatusEffect.id (for status) or Element name (for elemental)
   value: number; // % resistance to add (e.g. +50 = 50% more resistance)
+}
+
+export interface DispelAction {
+  category: "buff" | "debuff" | "any"; // what category of statuses to remove
+  count: number; // how many to remove, -1 for all
+  targetType: TargetType; // who gets dispelled
+}
+
+export const MOVEMENT_TYPES = ["push-back", "pull-forward", "teleport-self"] as const;
+export type MovementType = (typeof MOVEMENT_TYPES)[number];
+
+export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
+  "push-back": "Push to Back Row",
+  "pull-forward": "Pull to Front Row",
+  "teleport-self": "Teleport Self to Empty Space",
+};
+
+export interface MovementAction {
+  type: MovementType;
+  targetType: TargetType; // not used for teleport-self
+  trigger?: EffectTrigger; // when this movement fires, defaults to "on-use"
+  destinationSide?: "ally" | "enemy"; // for teleport-self: which team's grid to teleport to
+}
+
+export interface EnergyStealAction {
+  count: number;
+  mode: "random" | "choose"; // random pulls random colors; choose lets player pick
+  trigger?: EffectTrigger; // defaults to "on-use"
+}
+
+export interface EnergyGenerateAction {
+  count: number;
+  mode: "random" | "choose" | "specific"; // specific = always the configured color
+  color?: EnergyColor; // for specific mode
+  trigger?: EffectTrigger; // defaults to "on-use"
 }
 
 export interface SkillLevel {
@@ -83,12 +125,26 @@ export interface SkillLevel {
   passive?: boolean; // "while equipped" — effects auto-apply permanently while skill is equipped
   damageCategory?: "physical" | "magical" | "true" | "healing";
   damageTier?: string;
+  randomTierPool?: string[]; // when damageTier is "random", restrict the pool to these tiers
+  damageSourceOverride?: "direct" | "aoe" | "indirect"; // override the inferred direct/aoe category (e.g. mark a single-target skill as indirect)
   element?: Element;
   targetType?: TargetType;
   ignoreDefense?: number; // % of target's DEF to ignore (0-100), physical attacks only
   ignoreSpirit?: number; // % of target's SPI to ignore (0-100), magical attacks only
   effects?: SkillEffect[]; // buff/debuff applications
+  randomEffectPools?: RandomEffectPool[]; // pools of candidate effects, randomly picked at use time
   resistanceGrants?: ResistanceGrant[]; // passive resistance bonuses (status or elemental)
+  dispels?: DispelAction[]; // remove buffs/debuffs from targets
+  movements?: MovementAction[]; // grid position changes
+  energySteal?: EnergyStealAction; // steal energy from enemy team
+  energyGenerate?: EnergyGenerateAction; // generate energy for own team
+  stolenEnergyScaling?: { perStack: number; maxStacks: number; resetOnUse: boolean }; // damage bonus per stolen energy by this caster
+  hpCost?: number; // % of caster's max HP dealt as true self-damage when using this skill
+  casterMissingHpScaling?: number; // cap on % bonus damage scaled 1:1 with caster's missing HP %
+  giantSlayerMaxBonus?: number; // max % bonus damage at target full HP, scales linearly to 0 at 0% HP
+  executeBonus?: { threshold: number; maxBonus: number }; // bonus % damage scaling up as target HP drops below threshold
+  bonusHpDamage?: { percent: number; source: "max" | "current" }; // adds % of target HP as additional damage (same category, defended normally)
+  variableRepeat?: { color: EnergyColor | "any"; max: number }; // ramping cost: player chooses 1..max extra energies of this color to spend ("any" lets the player pick the color at use time), skill damage repeats once per energy spent (random-enemy re-rolls per hit)
 }
 
 export const SKILL_TYPES = ["innate", "basic", "ability", "conditional"] as const;
@@ -154,6 +210,7 @@ export interface StatusEffect {
   id: string;
   name: string;
   category: "buff" | "debuff" | "status";
+  polarity?: "positive" | "negative"; // for status category — is this a good or bad effect? (buffs default positive, debuffs default negative)
   stats: string[]; // ["atk", "mAtk", "def", "spi", "spd"] or ["none"] for statuses
   defaultModifier?: number;
   stackable?: boolean;
@@ -267,6 +324,7 @@ export interface Character {
   statusResistance: Record<string, number>; // effectId → avoidance% (0 = fully susceptible, 100 = immune)
   photoUrl?: string;
   summary?: string;
+  gender?: "male" | "female" | "other";
 }
 
 export interface BattleState {
@@ -462,6 +520,7 @@ export interface BuffDebuff {
   stacks?: number; // current stack count (default 1)
   onMaxStacks?: string; // StatusEffect ID to grant when max stacks reached
   appliedTurn?: number; // turn index when this buff was applied (skip ticking on same turn)
+  untilNextTurn?: boolean; // expires at the start of the caster's next turn (duration is ignored)
 }
 
 export interface DamageResult {

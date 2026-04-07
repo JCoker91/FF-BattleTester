@@ -5,7 +5,15 @@ import {
   Skill,
   SkillLevel,
   SkillEffect,
+  RandomEffectPool,
   ResistanceGrant,
+  DispelAction,
+  MovementAction,
+  MovementType,
+  MOVEMENT_TYPES,
+  MOVEMENT_TYPE_LABELS,
+  EnergyStealAction,
+  EnergyGenerateAction,
   SkillType,
   EnergyCost,
   ENERGY_COLORS,
@@ -67,6 +75,7 @@ function EffectsEditor({
   const [trigger, setTrigger] = useState<EffectTrigger>("on-use");
   const [triggerValue, setTriggerValue] = useState(50);
   const [once, setOnce] = useState(false);
+  const [untilNextTurn, setUntilNextTurn] = useState(false);
 
   const isEditing = editIdx !== null;
   const showForm = adding || isEditing;
@@ -84,6 +93,7 @@ function EffectsEditor({
     setTrigger(e.trigger ?? "on-use");
     setTriggerValue(e.triggerValue ?? 50);
     setOnce(e.once ?? false);
+    setUntilNextTurn(e.untilNextTurn ?? false);
   };
 
   const resetForm = () => {
@@ -96,6 +106,7 @@ function EffectsEditor({
     setTrigger("on-use");
     setTriggerValue(50);
     setOnce(false);
+    setUntilNextTurn(false);
   };
 
   const handleSave = () => {
@@ -109,6 +120,7 @@ function EffectsEditor({
       ...(trigger !== "on-use" ? { trigger } : {}),
       ...(isHpTrigger ? { triggerValue } : {}),
       ...(once ? { once: true } : {}),
+      ...(untilNextTurn ? { untilNextTurn: true } : {}),
     };
     if (isEditing && editIdx !== null) {
       onChange(effects.map((e, i) => (i === editIdx ? entry : e)));
@@ -247,6 +259,9 @@ function EffectsEditor({
                 />
               </label>
             )}
+            {untilNextTurn ? (
+              <span className="text-[10px] text-sky-400 italic">Until next turn</span>
+            ) : (
             <label className="flex items-center gap-1 text-[10px] text-gray-400">
               Dur
               {duration === -1 ? (
@@ -276,6 +291,7 @@ function EffectsEditor({
                 ∞
               </button>
             </label>
+            )}
             <label className="flex items-center gap-1 text-[10px] text-gray-400">
               Chance
               <input
@@ -299,11 +315,488 @@ function EffectsEditor({
               />
               Once per battle
             </label>
+            <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer" title="Skip ticking on the turn this was applied — buff survives until the caster's next turn even on instant skills">
+              <input
+                type="checkbox"
+                checked={untilNextTurn}
+                onChange={(e) => setUntilNextTurn(e.target.checked)}
+                className="w-3 h-3"
+              />
+              Until next turn
+            </label>
             <button
               onClick={handleSave}
               disabled={!effectId}
               className="text-[10px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
             >
+              {isEditing ? "Save" : "Add"}
+            </button>
+            <button onClick={resetForm} className="text-[10px] px-2 py-0.5 rounded bg-gray-700 text-gray-300">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RandomEffectPoolsEditor({
+  pools,
+  statusEffects,
+  onChange,
+}: {
+  pools: RandomEffectPool[];
+  statusEffects: StatusEffect[];
+  onChange: (pools: RandomEffectPool[]) => void;
+}) {
+  return (
+    <div className="border-t border-gray-800 pt-2 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-cyan-300 font-medium uppercase">Random Effect Pools</span>
+        <button
+          onClick={() => onChange([...pools, { pickCount: 1, effects: [] }])}
+          className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400"
+        >
+          + Add Pool
+        </button>
+      </div>
+      {pools.map((pool, pi) => (
+        <div key={pi} className="bg-gray-900/40 border border-gray-800 rounded p-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-cyan-300">Pool {pi + 1}: pick</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              className="w-12 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none"
+              value={pool.pickCount}
+              onChange={(e) => {
+                const v = Math.max(1, parseInt(e.target.value) || 1);
+                onChange(pools.map((p, i) => (i === pi ? { ...p, pickCount: v } : p)));
+              }}
+            />
+            <span className="text-[10px] text-gray-400">of {pool.effects.length} candidates</span>
+            <button
+              onClick={() => onChange(pools.filter((_, i) => i !== pi))}
+              className="ml-auto text-[10px] text-gray-600 hover:text-red-400"
+            >
+              Remove pool
+            </button>
+          </div>
+          <EffectsEditor
+            effects={pool.effects}
+            statusEffects={statusEffects}
+            onChange={(newEffects) => onChange(pools.map((p, i) => (i === pi ? { ...p, effects: newEffects } : p)))}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MovementsEditor({
+  movements,
+  onChange,
+}: {
+  movements: MovementAction[];
+  onChange: (movements: MovementAction[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [type, setType] = useState<MovementType>("push-back");
+  const [targetType, setTargetType] = useState<TargetType>("front-row-enemy");
+  const [trigger, setTrigger] = useState<EffectTrigger>("on-use");
+  const [destinationSide, setDestinationSide] = useState<"ally" | "enemy">("ally");
+
+  const isEditing = editIdx !== null;
+  const showForm = adding || isEditing;
+  const isTeleport = type === "teleport-self";
+
+  const startEdit = (i: number) => {
+    const m = movements[i];
+    setEditIdx(i);
+    setAdding(false);
+    setType(m.type);
+    setTargetType(m.targetType);
+    setTrigger(m.trigger ?? "on-use");
+    setDestinationSide(m.destinationSide ?? "ally");
+  };
+
+  const resetForm = () => {
+    setAdding(false);
+    setEditIdx(null);
+    setType("push-back");
+    setTargetType("front-row-enemy");
+    setTrigger("on-use");
+    setDestinationSide("ally");
+  };
+
+  const handleSave = () => {
+    const entry: MovementAction = {
+      type,
+      targetType,
+      ...(trigger !== "on-use" ? { trigger } : {}),
+      ...(type === "teleport-self" ? { destinationSide } : {}),
+    };
+    if (isEditing && editIdx !== null) {
+      onChange(movements.map((m, i) => (i === editIdx ? entry : m)));
+    } else {
+      onChange([...movements, entry]);
+    }
+    resetForm();
+  };
+
+  const filteredTriggers = EFFECT_TRIGGERS.filter((t) => t === "on-use" || t === "on-attack-hit");
+
+  return (
+    <div className="border-t border-gray-800 pt-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-orange-400 font-medium uppercase">Movements</span>
+        {!showForm && (
+          <button
+            onClick={() => { setAdding(true); setEditIdx(null); }}
+            className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400"
+          >
+            + Add Movement
+          </button>
+        )}
+      </div>
+      {movements.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {movements.map((m, i) => {
+            if (editIdx === i) return null;
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] bg-gray-800/50 rounded px-2 py-0.5">
+                <span className="text-orange-400">{MOVEMENT_TYPE_LABELS[m.type]}</span>
+                {m.type !== "teleport-self" && (
+                  <span className="text-gray-500 text-[10px]">{TARGET_TYPE_LABELS[m.targetType]}</span>
+                )}
+                {m.type === "teleport-self" && (
+                  <span className="text-gray-500 text-[10px]">{m.destinationSide ?? "ally"} side</span>
+                )}
+                {m.trigger && m.trigger !== "on-use" && (
+                  <span className="text-sky-400 text-[10px]">{EFFECT_TRIGGER_LABELS[m.trigger]}</span>
+                )}
+                <button onClick={() => startEdit(i)} className="ml-auto text-gray-600 hover:text-blue-400 text-[10px]">edit</button>
+                <button onClick={() => onChange(movements.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 text-[10px]">x</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {showForm && (
+        <div className="mt-1 bg-gray-800 rounded p-2 space-y-1.5">
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              Type:
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={type}
+                onChange={(e) => setType(e.target.value as MovementType)}
+              >
+                {MOVEMENT_TYPES.map((mt) => (
+                  <option key={mt} value={mt}>{MOVEMENT_TYPE_LABELS[mt]}</option>
+                ))}
+              </select>
+            </label>
+            {!isTeleport && (
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                Target:
+                <select
+                  className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                  value={targetType}
+                  onChange={(e) => setTargetType(e.target.value as TargetType)}
+                >
+                  {TARGET_TYPES.map((t) => (
+                    <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {isTeleport && (
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                Destination:
+                <select
+                  className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                  value={destinationSide}
+                  onChange={(e) => setDestinationSide(e.target.value as "ally" | "enemy")}
+                >
+                  <option value="ally">Ally Side</option>
+                  <option value="enemy">Enemy Side</option>
+                </select>
+              </label>
+            )}
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              Trigger:
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={trigger}
+                onChange={(e) => setTrigger(e.target.value as EffectTrigger)}
+              >
+                {filteredTriggers.map((t) => (
+                  <option key={t} value={t}>{EFFECT_TRIGGER_LABELS[t]}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex gap-1.5">
+            <button onClick={handleSave} className="text-[10px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white">
+              {isEditing ? "Save" : "Add"}
+            </button>
+            <button onClick={resetForm} className="text-[10px] px-2 py-0.5 rounded bg-gray-700 text-gray-300">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EnergyActionsEditor({
+  steal,
+  generate,
+  onChangeSteal,
+  onChangeGenerate,
+}: {
+  steal?: EnergyStealAction;
+  generate?: EnergyGenerateAction;
+  onChangeSteal: (s: EnergyStealAction | undefined) => void;
+  onChangeGenerate: (g: EnergyGenerateAction | undefined) => void;
+}) {
+  return (
+    <div className="border-t border-gray-800 pt-2 space-y-1.5">
+      <span className="text-[10px] text-pink-400 font-medium uppercase">Energy Actions</span>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <label className="flex items-center gap-1 text-[10px] text-gray-400">
+          <input
+            type="checkbox"
+            checked={!!steal}
+            onChange={(e) => onChangeSteal(e.target.checked ? { count: 1, mode: "random" } : undefined)}
+            className="w-3 h-3"
+          />
+          Steal
+        </label>
+        {steal && (
+          <>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              className="w-10 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+              value={steal.count}
+              onChange={(e) => onChangeSteal({ ...steal, count: Math.max(1, parseInt(e.target.value) || 1) })}
+            />
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+              value={steal.mode}
+              onChange={(e) => onChangeSteal({ ...steal, mode: e.target.value as "random" | "choose" })}
+            >
+              <option value="random">Random</option>
+              <option value="choose">Choose</option>
+            </select>
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+              value={steal.trigger ?? "on-use"}
+              onChange={(e) => onChangeSteal({ ...steal, trigger: e.target.value === "on-use" ? undefined : "on-attack-hit" })}
+            >
+              <option value="on-use">On Use</option>
+              <option value="on-attack-hit">On Hit</option>
+            </select>
+          </>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <label className="flex items-center gap-1 text-[10px] text-gray-400">
+          <input
+            type="checkbox"
+            checked={!!generate}
+            onChange={(e) => onChangeGenerate(e.target.checked ? { count: 1, mode: "random" } : undefined)}
+            className="w-3 h-3"
+          />
+          Generate
+        </label>
+        {generate && (
+          <>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              className="w-10 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+              value={generate.count}
+              onChange={(e) => onChangeGenerate({ ...generate, count: Math.max(1, parseInt(e.target.value) || 1) })}
+            />
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+              value={generate.mode}
+              onChange={(e) => {
+                const mode = e.target.value as "random" | "choose" | "specific";
+                onChangeGenerate({ ...generate, mode, color: mode === "specific" ? (generate.color ?? "red") : undefined });
+              }}
+            >
+              <option value="random">Random</option>
+              <option value="choose">Choose</option>
+              <option value="specific">Specific</option>
+            </select>
+            {generate.mode === "specific" && (
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                value={generate.color ?? "red"}
+                onChange={(e) => onChangeGenerate({ ...generate, color: e.target.value as EnergyColor })}
+              >
+                {ENERGY_COLORS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+            <select
+              className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+              value={generate.trigger ?? "on-use"}
+              onChange={(e) => onChangeGenerate({ ...generate, trigger: e.target.value === "on-use" ? undefined : "on-attack-hit" })}
+            >
+              <option value="on-use">On Use</option>
+              <option value="on-attack-hit">On Hit</option>
+            </select>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DispelsEditor({
+  dispels,
+  onChange,
+}: {
+  dispels: DispelAction[];
+  onChange: (dispels: DispelAction[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [category, setCategory] = useState<"buff" | "debuff" | "any">("buff");
+  const [countMode, setCountMode] = useState<"all" | "number">("all");
+  const [count, setCount] = useState(1);
+  const [targetType, setTargetType] = useState<TargetType>("target-enemy");
+
+  const isEditing = editIdx !== null;
+  const showForm = adding || isEditing;
+
+  const startEdit = (i: number) => {
+    const d = dispels[i];
+    setEditIdx(i);
+    setAdding(false);
+    setCategory(d.category);
+    if (d.count === -1) {
+      setCountMode("all");
+      setCount(1);
+    } else {
+      setCountMode("number");
+      setCount(d.count);
+    }
+    setTargetType(d.targetType);
+  };
+
+  const resetForm = () => {
+    setAdding(false);
+    setEditIdx(null);
+    setCategory("buff");
+    setCountMode("all");
+    setCount(1);
+    setTargetType("target-enemy");
+  };
+
+  const handleSave = () => {
+    const entry: DispelAction = {
+      category,
+      count: countMode === "all" ? -1 : count,
+      targetType,
+    };
+    if (isEditing && editIdx !== null) {
+      onChange(dispels.map((d, i) => (i === editIdx ? entry : d)));
+    } else {
+      onChange([...dispels, entry]);
+    }
+    resetForm();
+  };
+
+  return (
+    <div className="border-t border-gray-800 pt-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-cyan-400 font-medium uppercase">Dispels</span>
+        {!showForm && (
+          <button
+            onClick={() => { setAdding(true); setEditIdx(null); }}
+            className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400"
+          >
+            + Add Dispel
+          </button>
+        )}
+      </div>
+      {dispels.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {dispels.map((d, i) => {
+            if (editIdx === i) return null;
+            const countLabel = d.count === -1 ? "All" : `${d.count}`;
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] bg-gray-800/50 rounded px-2 py-0.5">
+                <span className="text-cyan-400">Remove {countLabel} {d.category}{d.category !== "any" && d.count !== 1 ? "s" : ""}</span>
+                <span className="text-gray-500 text-[10px]">{TARGET_TYPE_LABELS[d.targetType]}</span>
+                <button onClick={() => startEdit(i)} className="ml-auto text-gray-600 hover:text-blue-400 text-[10px]">edit</button>
+                <button onClick={() => onChange(dispels.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 text-[10px]">x</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {showForm && (
+        <div className="mt-1 bg-gray-800 rounded p-2 space-y-1.5">
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              Category:
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={category}
+                onChange={(e) => setCategory(e.target.value as "buff" | "debuff" | "any")}
+              >
+                <option value="buff">Positive (Buffs + Positive Statuses)</option>
+                <option value="debuff">Negative (Debuffs + Negative Statuses)</option>
+                <option value="any">Any</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              Count:
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={countMode}
+                onChange={(e) => setCountMode(e.target.value as "all" | "number")}
+              >
+                <option value="all">All</option>
+                <option value="number">Number</option>
+              </select>
+              {countMode === "number" && (
+                <input
+                  type="number"
+                  className="w-10 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[11px] focus:outline-none"
+                  value={count}
+                  onChange={(e) => setCount(parseInt(e.target.value) || 1)}
+                  min={1}
+                />
+              )}
+            </label>
+          </div>
+          <div className="flex gap-1.5 flex-wrap items-center">
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              Target:
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={targetType}
+                onChange={(e) => setTargetType(e.target.value as TargetType)}
+              >
+                {TARGET_TYPES.map((t) => (
+                  <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex gap-1.5">
+            <button onClick={handleSave} className="text-[10px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white">
               {isEditing ? "Save" : "Add"}
             </button>
             <button onClick={resetForm} className="text-[10px] px-2 py-0.5 rounded bg-gray-700 text-gray-300">Cancel</button>
@@ -659,6 +1152,81 @@ export function SkillForm({
                   </select>
                 </div>
               )}
+              {level.damageCategory && level.damageTier === "random" && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] text-gray-500">Pool:</span>
+                  {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => {
+                    const pool = level.randomTierPool ?? [];
+                    const checked = pool.includes(t);
+                    return (
+                      <label key={t} className="flex items-center gap-0.5 text-[10px] text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...pool, t]
+                              : pool.filter((x) => x !== t);
+                            updateLevel(i, { randomTierPool: next.length > 0 ? next : undefined });
+                          }}
+                        />
+                        {DAMAGE_TIER_LABELS[t]}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {level.damageCategory && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                    <input
+                      type="checkbox"
+                      checked={!!level.variableRepeat}
+                      onChange={(e) => updateLevel(i, { variableRepeat: e.target.checked ? { color: "red", max: 5 } : undefined })}
+                    />
+                    Variable Repeat
+                  </label>
+                  {level.variableRepeat && (
+                    <>
+                      <select
+                        className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                        value={level.variableRepeat.color}
+                        onChange={(e) => updateLevel(i, { variableRepeat: { ...level.variableRepeat!, color: e.target.value as EnergyColor | "any" } })}
+                      >
+                        <option value="any">any</option>
+                        {ENERGY_COLORS.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                      <span className="text-[10px] text-gray-500">max</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-12"
+                        value={level.variableRepeat.max}
+                        onChange={(e) => updateLevel(i, { variableRepeat: { ...level.variableRepeat!, max: Math.max(1, Math.min(10, parseInt(e.target.value) || 1)) } })}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+              {level.damageCategory && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Source:</span>
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                    value={level.damageSourceOverride ?? ""}
+                    onChange={(e) => updateLevel(i, { damageSourceOverride: (e.target.value || undefined) as SkillLevel["damageSourceOverride"] })}
+                    title="Override how this skill is classified for cover/source-resistance interactions"
+                  >
+                    <option value="">Auto (from target)</option>
+                    <option value="direct">Direct</option>
+                    <option value="aoe">AOE</option>
+                    <option value="indirect">Indirect</option>
+                  </select>
+                </div>
+              )}
               {level.damageCategory && level.damageCategory !== "healing" && (
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-gray-500">Element:</span>
@@ -709,6 +1277,21 @@ export function SkillForm({
                 </div>
               )}
               <div className="flex items-center gap-1">
+                <span className="text-[10px] text-red-400">HP Cost:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                  value={level.hpCost ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                    updateLevel(i, { hpCost: v || undefined });
+                  }}
+                />
+                <span className="text-[10px] text-gray-500">% max HP</span>
+              </div>
+              <div className="flex items-center gap-1">
                 <span className="text-[10px] text-gray-500">Target:</span>
                 <select
                   className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
@@ -722,6 +1305,132 @@ export function SkillForm({
                 </select>
               </div>
             </div>
+
+            {level.damageCategory && (
+              <div className="flex gap-2 items-center flex-wrap">
+                <span className="text-[10px] text-gray-500">HP Scaling:</span>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                  Caster Missing HP cap:
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.casterMissingHpScaling ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                      updateLevel(i, { casterMissingHpScaling: v || undefined });
+                    }}
+                  />
+                  %
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                  Giant Slayer max:
+                  <input
+                    type="number"
+                    min={0}
+                    max={500}
+                    className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.giantSlayerMaxBonus ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
+                      updateLevel(i, { giantSlayerMaxBonus: v || undefined });
+                    }}
+                  />
+                  %
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                  Execute:
+                  <input
+                    type="number"
+                    min={0}
+                    max={500}
+                    className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.executeBonus?.maxBonus ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
+                      updateLevel(i, { executeBonus: v > 0 ? { threshold: level.executeBonus?.threshold ?? 25, maxBonus: v } : undefined });
+                    }}
+                  />
+                  % at HP ≤
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    className="w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.executeBonus?.threshold ?? 25}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(99, parseInt(e.target.value) || 25));
+                      if (level.executeBonus) updateLevel(i, { executeBonus: { ...level.executeBonus, threshold: v } });
+                    }}
+                  />
+                  %
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                  Bonus HP dmg:
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.bonusHpDamage?.percent ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                      updateLevel(i, { bonusHpDamage: v > 0 ? { percent: v, source: level.bonusHpDamage?.source ?? "max" } : undefined });
+                    }}
+                  />
+                  % of
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.bonusHpDamage?.source ?? "max"}
+                    onChange={(e) => {
+                      if (level.bonusHpDamage) updateLevel(i, { bonusHpDamage: { ...level.bonusHpDamage, source: e.target.value as "max" | "current" } });
+                    }}
+                  >
+                    <option value="max">Max HP</option>
+                    <option value="current">Current HP</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                  Stolen Energy:
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="w-12 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.stolenEnergyScaling?.perStack ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                      updateLevel(i, { stolenEnergyScaling: v > 0 ? { perStack: v, maxStacks: level.stolenEnergyScaling?.maxStacks ?? 5, resetOnUse: level.stolenEnergyScaling?.resetOnUse ?? true } : undefined });
+                    }}
+                  />
+                  % per stack, max
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    className="w-10 bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                    value={level.stolenEnergyScaling?.maxStacks ?? 5}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(20, parseInt(e.target.value) || 5));
+                      if (level.stolenEnergyScaling) updateLevel(i, { stolenEnergyScaling: { ...level.stolenEnergyScaling, maxStacks: v } });
+                    }}
+                  />
+                  stacks
+                  <label className="flex items-center gap-1 ml-1">
+                    <input
+                      type="checkbox"
+                      checked={level.stolenEnergyScaling?.resetOnUse ?? true}
+                      onChange={(e) => {
+                        if (level.stolenEnergyScaling) updateLevel(i, { stolenEnergyScaling: { ...level.stolenEnergyScaling, resetOnUse: e.target.checked } });
+                      }}
+                      className="w-3 h-3"
+                    />
+                    Reset on use
+                  </label>
+                </label>
+              </div>
+            )}
 
             <div className="flex gap-1 items-center flex-wrap">
               <span className="text-xs text-gray-500 mr-1">Add cost:</span>
@@ -764,11 +1473,31 @@ export function SkillForm({
               statusEffects={statusEffects}
               onChange={(effects) => updateLevel(i, { effects: effects.length > 0 ? effects : undefined })}
             />
+            <RandomEffectPoolsEditor
+              pools={level.randomEffectPools ?? []}
+              statusEffects={statusEffects}
+              onChange={(pools) => updateLevel(i, { randomEffectPools: pools.length > 0 ? pools : undefined })}
+            />
             {/* Resistance grants (for passive skills) */}
             <ResistanceGrantsEditor
               grants={level.resistanceGrants ?? []}
               statusEffects={statusEffects}
               onChange={(grants) => updateLevel(i, { resistanceGrants: grants.length > 0 ? grants : undefined })}
+            />
+            {/* Dispels */}
+            <DispelsEditor
+              dispels={level.dispels ?? []}
+              onChange={(dispels) => updateLevel(i, { dispels: dispels.length > 0 ? dispels : undefined })}
+            />
+            <MovementsEditor
+              movements={level.movements ?? []}
+              onChange={(movements) => updateLevel(i, { movements: movements.length > 0 ? movements : undefined })}
+            />
+            <EnergyActionsEditor
+              steal={level.energySteal}
+              generate={level.energyGenerate}
+              onChangeSteal={(es) => updateLevel(i, { energySteal: es })}
+              onChangeGenerate={(eg) => updateLevel(i, { energyGenerate: eg })}
             />
             {/* Per-level template link */}
             {isAbility && templates && templates.length > 0 && (
@@ -896,6 +1625,21 @@ export function SkillForm({
               </div>
             )}
             <div className="flex items-center gap-1">
+              <span className="text-[10px] text-red-400">HP Cost:</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                value={form.levels[0].hpCost ?? 0}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                  updateLevel(0, { hpCost: v || undefined });
+                }}
+              />
+              <span className="text-[10px] text-gray-500">% max HP</span>
+            </div>
+            <div className="flex items-center gap-1">
               <span className="text-[10px] text-gray-500">Target:</span>
               <select
                 className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
@@ -909,17 +1653,123 @@ export function SkillForm({
               </select>
             </div>
           </div>
+          {form.levels[0].damageCategory && (
+            <div className="flex gap-2 items-center flex-wrap">
+              <span className="text-[10px] text-gray-500">HP Scaling:</span>
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                Caster Missing HP cap:
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={form.levels[0].casterMissingHpScaling ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                    updateLevel(0, { casterMissingHpScaling: v || undefined });
+                  }}
+                />
+                %
+              </label>
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                Giant Slayer max:
+                <input
+                  type="number"
+                  min={0}
+                  max={500}
+                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={form.levels[0].giantSlayerMaxBonus ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
+                    updateLevel(0, { giantSlayerMaxBonus: v || undefined });
+                  }}
+                />
+                %
+              </label>
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                Execute:
+                <input
+                  type="number"
+                  min={0}
+                  max={500}
+                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={form.levels[0].executeBonus?.maxBonus ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
+                    updateLevel(0, { executeBonus: v > 0 ? { threshold: form.levels[0].executeBonus?.threshold ?? 25, maxBonus: v } : undefined });
+                  }}
+                />
+                % at HP ≤
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  className="w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={form.levels[0].executeBonus?.threshold ?? 25}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(99, parseInt(e.target.value) || 25));
+                    if (form.levels[0].executeBonus) updateLevel(0, { executeBonus: { ...form.levels[0].executeBonus, threshold: v } });
+                  }}
+                />
+                %
+              </label>
+              <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                Bonus HP dmg:
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={form.levels[0].bonusHpDamage?.percent ?? 0}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                    updateLevel(0, { bonusHpDamage: v > 0 ? { percent: v, source: form.levels[0].bonusHpDamage?.source ?? "max" } : undefined });
+                  }}
+                />
+                % of
+                <select
+                  className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                  value={form.levels[0].bonusHpDamage?.source ?? "max"}
+                  onChange={(e) => {
+                    if (form.levels[0].bonusHpDamage) updateLevel(0, { bonusHpDamage: { ...form.levels[0].bonusHpDamage, source: e.target.value as "max" | "current" } });
+                  }}
+                >
+                  <option value="max">Max HP</option>
+                  <option value="current">Current HP</option>
+                </select>
+              </label>
+            </div>
+          )}
           {/* Effects for basic/innate */}
           <EffectsEditor
             effects={form.levels[0].effects ?? []}
             statusEffects={statusEffects}
             onChange={(effects) => updateLevel(0, { effects: effects.length > 0 ? effects : undefined })}
           />
+          <RandomEffectPoolsEditor
+            pools={form.levels[0].randomEffectPools ?? []}
+            statusEffects={statusEffects}
+            onChange={(pools) => updateLevel(0, { randomEffectPools: pools.length > 0 ? pools : undefined })}
+          />
           {/* Resistance grants for basic/innate */}
           <ResistanceGrantsEditor
             grants={form.levels[0].resistanceGrants ?? []}
             statusEffects={statusEffects}
             onChange={(grants) => updateLevel(0, { resistanceGrants: grants.length > 0 ? grants : undefined })}
+          />
+          <DispelsEditor
+            dispels={form.levels[0].dispels ?? []}
+            onChange={(dispels) => updateLevel(0, { dispels: dispels.length > 0 ? dispels : undefined })}
+          />
+          <MovementsEditor
+            movements={form.levels[0].movements ?? []}
+            onChange={(movements) => updateLevel(0, { movements: movements.length > 0 ? movements : undefined })}
+          />
+          <EnergyActionsEditor
+            steal={form.levels[0].energySteal}
+            generate={form.levels[0].energyGenerate}
+            onChangeSteal={(es) => updateLevel(0, { energySteal: es })}
+            onChangeGenerate={(eg) => updateLevel(0, { energyGenerate: eg })}
           />
         </div>
       )}

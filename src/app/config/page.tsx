@@ -339,6 +339,9 @@ export default function ConfigPage() {
     { value: "eleDmg.light", label: "Light Dmg" },
     { value: "dmgCatRes.physical", label: "Physical Res" },
     { value: "dmgCatRes.magical", label: "Magical Res" },
+    { value: "dmgSrcRes.direct", label: "Direct Res" },
+    { value: "dmgSrcRes.indirect", label: "Indirect Res" },
+    { value: "dmgSrcRes.aoe", label: "AOE Res" },
   ];
 
   const [tab, setTab] = useState<"series" | "glossary" | "status-effects">("series");
@@ -751,6 +754,21 @@ export default function ConfigPage() {
                       ))}
                     </select>
                   </div>
+                  {seForm.category === "status" && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Polarity:</span>
+                      <select
+                        className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none"
+                        value={seForm.polarity ?? ""}
+                        onChange={(e) => setSEForm({ ...seForm, polarity: (e.target.value || undefined) as "positive" | "negative" | undefined })}
+                      >
+                        <option value="">Neutral</option>
+                        <option value="positive">Positive</option>
+                        <option value="negative">Negative</option>
+                      </select>
+                      <span className="text-[10px] text-gray-600">(determines if dispel/esuna can remove it)</span>
+                    </div>
+                  )}
                   {seForm.category === "status" && (
                     <TagsEditor
                       tags={seForm.tags ?? []}

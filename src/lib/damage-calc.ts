@@ -14,6 +14,8 @@ interface CombatantStats {
   elementalResistance: ElementalValues;
   elementalDamage: ElementalValues;
   buffs: BuffDebuff[];
+  currentHp?: number; // current HP for HP-based scaling (defaults to max HP if not provided)
+  stolenEnergyCount?: number; // total energy stolen by this character so far this battle
 }
 
 /**
@@ -60,7 +62,10 @@ export function calculateDamage(
   const ROLLABLE_TIERS: DamageTier[] = ["minor", "low", "moderate", "high", "severe", "massive"];
   let tier = (skillLevel.damageTier ?? "moderate") as DamageTier;
   if (tier === "random") {
-    tier = ROLLABLE_TIERS[Math.floor(Math.random() * ROLLABLE_TIERS.length)];
+    const pool = (skillLevel.randomTierPool && skillLevel.randomTierPool.length > 0
+      ? (skillLevel.randomTierPool.filter((t) => ROLLABLE_TIERS.includes(t as DamageTier)) as DamageTier[])
+      : ROLLABLE_TIERS);
+    tier = pool[Math.floor(Math.random() * pool.length)];
     breakdown.push(`Random tier rolled: ${tier}`);
   }
   const tierMult = DAMAGE_MULTIPLIERS[tier] ?? 1.0;
@@ -122,8 +127,98 @@ export function calculateDamage(
   breakdown.push(`Ratio: ${ratio.toFixed(2)}`);
 
   // Base damage
-  const rawDamage = BASE_POWER * ratio * tierMult;
+  let rawDamage = BASE_POWER * ratio * tierMult;
   breakdown.push(`Base: ${BASE_POWER} × ${ratio.toFixed(2)} × ${tierMult} (${tier}) = ${rawDamage.toFixed(1)}`);
+
+  // HP-based bonus scalings (skip for healing)
+  if (!isHealing) {
+    // Caster missing HP scaling (1:1 with missing HP %, capped)
+    if (skillLevel.casterMissingHpScaling && skillLevel.casterMissingHpScaling > 0) {
+      const aMaxHp = attacker.stats.hp;
+      const aCurHp = attacker.currentHp ?? aMaxHp;
+      const missingPct = Math.max(0, ((aMaxHp - aCurHp) / aMaxHp) * 100);
+      const bonusPct = Math.min(missingPct, skillLevel.casterMissingHpScaling);
+      if (bonusPct > 0) {
+        const before = rawDamage;
+        rawDamage = rawDamage * (1 + bonusPct / 100);
+        breakdown.push(`Missing HP bonus: +${bonusPct.toFixed(0)}% — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+      }
+    }
+    // Giant Slayer (more damage to high HP targets)
+    if (skillLevel.giantSlayerMaxBonus && skillLevel.giantSlayerMaxBonus > 0) {
+      const dMaxHp = defender.stats.hp;
+      const dCurHp = defender.currentHp ?? dMaxHp;
+      const targetHpPct = Math.max(0, Math.min(100, (dCurHp / dMaxHp) * 100));
+      const bonusPct = (targetHpPct / 100) * skillLevel.giantSlayerMaxBonus;
+      if (bonusPct > 0) {
+        const before = rawDamage;
+        rawDamage = rawDamage * (1 + bonusPct / 100);
+        breakdown.push(`Giant Slayer: +${bonusPct.toFixed(0)}% — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+      }
+    }
+    // Execute (more damage to low HP targets)
+    if (skillLevel.executeBonus && skillLevel.executeBonus.maxBonus > 0) {
+      const dMaxHp = defender.stats.hp;
+      const dCurHp = defender.currentHp ?? dMaxHp;
+      const targetHpPct = Math.max(0, Math.min(100, (dCurHp / dMaxHp) * 100));
+      const { threshold, maxBonus } = skillLevel.executeBonus;
+      let bonusPct = 0;
+      if (targetHpPct <= threshold) {
+        bonusPct = maxBonus;
+      } else if (threshold < 100) {
+        bonusPct = maxBonus * ((100 - targetHpPct) / (100 - threshold));
+      }
+      if (bonusPct > 0) {
+        const before = rawDamage;
+        rawDamage = rawDamage * (1 + bonusPct / 100);
+        breakdown.push(`Execute: +${bonusPct.toFixed(0)}% — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+      }
+    }
+    // Bonus HP damage (% of target's max or current HP, processed through ratio so defenses still apply)
+    if (skillLevel.bonusHpDamage && skillLevel.bonusHpDamage.percent > 0) {
+      const dMaxHp = defender.stats.hp;
+      const dCurHp = defender.currentHp ?? dMaxHp;
+      const hpBase = skillLevel.bonusHpDamage.source === "current" ? dCurHp : dMaxHp;
+      const bonusBase = hpBase * (skillLevel.bonusHpDamage.percent / 100);
+      const bonusDamage = bonusBase * ratio;
+      const before = rawDamage;
+      rawDamage = rawDamage + bonusDamage;
+      breakdown.push(`Bonus ${skillLevel.bonusHpDamage.percent}% ${skillLevel.bonusHpDamage.source} HP: +${bonusDamage.toFixed(1)} (${hpBase} × ${(skillLevel.bonusHpDamage.percent / 100).toFixed(2)} × ${ratio.toFixed(2)}) — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+    }
+    // Stolen energy scaling — bonus damage based on caster's total stolen energy
+    if (skillLevel.stolenEnergyScaling && skillLevel.stolenEnergyScaling.perStack > 0) {
+      const stolen = attacker.stolenEnergyCount ?? 0;
+      const stacks = Math.min(stolen, skillLevel.stolenEnergyScaling.maxStacks);
+      const bonusPct = stacks * skillLevel.stolenEnergyScaling.perStack;
+      if (bonusPct > 0) {
+        const before = rawDamage;
+        rawDamage = rawDamage * (1 + bonusPct / 100);
+        breakdown.push(`Stolen energy bonus: ${stacks} stacks × ${skillLevel.stolenEnergyScaling.perStack}% = +${bonusPct}% — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+      }
+    }
+  }
+
+  // Faster Target Bonus: bonus damage when attacker SPD > defender SPD
+  if (!isHealing) {
+    const atkSpd = getEffectiveStat(attacker.stats.spd, "spd", attacker.buffs);
+    const defSpd = getEffectiveStat(defender.stats.spd, "spd", defender.buffs);
+    if (atkSpd > defSpd) {
+      let bonusPct = 0;
+      for (const b of attacker.buffs) {
+        if (!b.tags) continue;
+        for (const t of b.tags) {
+          if (t.type !== "faster-target-bonus") continue;
+          const p = (t.params.percent as number) ?? 10;
+          if (p > bonusPct) bonusPct = p;
+        }
+      }
+      if (bonusPct > 0) {
+        const before = rawDamage;
+        rawDamage = rawDamage * (1 + bonusPct / 100);
+        breakdown.push(`Faster Target: +${bonusPct}% (SPD ${atkSpd.toFixed(0)} > ${defSpd.toFixed(0)}) — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+      }
+    }
+  }
 
   // Elemental modifier (skip for healing)
   let elementalModifier = 0;
@@ -148,6 +243,39 @@ export function calculateDamage(
       `Elemental (${element}): ${attackerElemDmg}% dmg - ${defenderElemRes}% res = ${elementalModifier > 0 ? "+" : ""}${(elementalModifier * 100).toFixed(0)}%`
     );
     breakdown.push(`Final: ${rawDamage.toFixed(1)} × ${(1 + elementalModifier).toFixed(2)} = ${finalDamage.toFixed(1)}`);
+  }
+
+  // Category resistance (physical/magical) — dmgCatRes.physical, dmgCatRes.magical
+  if (!isHealing && (category === "physical" || category === "magical")) {
+    const catKey = `dmgCatRes.${category}`;
+    const catModifier = defender.buffs
+      .filter((b) => b.stats.includes(catKey))
+      .reduce((sum, b) => sum + b.modifier * (b.stacks ?? 1), 0);
+    if (catModifier !== 0) {
+      const reduction = catModifier / 100;
+      const before = finalDamage;
+      finalDamage = finalDamage * (1 - reduction);
+      breakdown.push(`${category} Res: ${catModifier > 0 ? "+" : ""}${catModifier}% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    }
+  }
+
+  // Source resistance (direct/aoe/indirect) — dmgSrcRes.direct, dmgSrcRes.aoe, dmgSrcRes.indirect
+  if (!isHealing && skillLevel.targetType) {
+    const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy"]);
+    const directTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "target-ally", "target-ally-or-self", "random-ally", "adjacent-ally"]);
+    const srcCat = skillLevel.damageSourceOverride
+      ? skillLevel.damageSourceOverride
+      : aoeTypes.has(skillLevel.targetType) ? "aoe" : directTypes.has(skillLevel.targetType) ? "direct" : "indirect";
+    const srcKey = `dmgSrcRes.${srcCat}`;
+    const srcModifier = defender.buffs
+      .filter((b) => b.stats.includes(srcKey))
+      .reduce((sum, b) => sum + b.modifier * (b.stacks ?? 1), 0);
+    if (srcModifier !== 0) {
+      const reduction = srcModifier / 100;
+      const before = finalDamage;
+      finalDamage = finalDamage * (1 - reduction);
+      breakdown.push(`${srcCat} Res: ${srcModifier > 0 ? "+" : ""}${srcModifier}% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    }
   }
 
   // Variance: ±10% random

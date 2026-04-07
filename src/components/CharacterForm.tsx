@@ -59,6 +59,7 @@ export function CharacterForm({
     initial?.stats ?? defaultStats()
   );
   const [summary, setSummary] = useState(initial?.summary ?? "");
+  const [gender, setGender] = useState<Character["gender"] | "">(initial?.gender ?? "");
   const [elemRes, setElemRes] = useState<ElementalValues>(initial?.elementalResistance ?? { ...DEFAULT_ELEMENTAL });
   const [elemDmg, setElemDmg] = useState<ElementalValues>(initial?.elementalDamage ?? { ...DEFAULT_ELEMENTAL });
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(
@@ -117,6 +118,7 @@ export function CharacterForm({
       statusResistance: initial?.statusResistance ?? {},
       photoUrl,
       summary: summary || undefined,
+      gender: gender || undefined,
     });
   };
 
@@ -165,6 +167,21 @@ export function CharacterForm({
                 {t}
               </option>
             ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">
+            Gender
+          </label>
+          <select
+            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-gray-500"
+            value={gender ?? ""}
+            onChange={(e) => setGender((e.target.value || "") as Character["gender"] | "")}
+          >
+            <option value="">— Unspecified —</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
           </select>
         </div>
       </div>
