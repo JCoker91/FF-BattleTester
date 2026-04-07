@@ -26,7 +26,7 @@ const ENERGY_HEX: Record<EnergyColor, string> = {
 };
 
 const defaultStats = (): CharacterStats => ({
-  hp: 100,
+  hp: 1000,
   atk: 10,
   mAtk: 10,
   def: 10,

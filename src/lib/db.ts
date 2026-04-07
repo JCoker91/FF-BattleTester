@@ -270,6 +270,32 @@ if (!charColumns.some((c) => c.name === "elemental_damage")) {
 if (!charColumns.some((c) => c.name === "status_resistance")) {
   db.exec("ALTER TABLE characters ADD COLUMN status_resistance TEXT DEFAULT '{}'");
 }
+// One-time HP×10 migration: BASE_POWER was bumped from 10 to 100; existing
+// characters had HP around 100, so multiply all character HP by 10 once.
+if (!charColumns.some((c) => c.name === "hp_scaled_v1")) {
+  db.exec("ALTER TABLE characters ADD COLUMN hp_scaled_v1 INTEGER NOT NULL DEFAULT 0");
+  const rows = db.prepare("SELECT id, stats FROM characters WHERE hp_scaled_v1 = 0").all() as { id: string; stats: string }[];
+  const upd = db.prepare("UPDATE characters SET stats = ?, hp_scaled_v1 = 1 WHERE id = ?");
+  for (const r of rows) {
+    try {
+      const s = JSON.parse(r.stats);
+      if (typeof s.hp === "number") s.hp = s.hp * 10;
+      upd.run(JSON.stringify(s), r.id);
+    } catch { /* ignore */ }
+  }
+  // Also scale any form stat_overrides that contain hp
+  const formRows = db.prepare("SELECT id, stat_overrides FROM forms WHERE stat_overrides IS NOT NULL").all() as { id: string; stat_overrides: string }[];
+  const updForm = db.prepare("UPDATE forms SET stat_overrides = ? WHERE id = ?");
+  for (const f of formRows) {
+    try {
+      const s = JSON.parse(f.stat_overrides);
+      if (s && typeof s.hp === "number") {
+        s.hp = s.hp * 10;
+        updForm.run(JSON.stringify(s), f.id);
+      }
+    } catch { /* ignore */ }
+  }
+}
 
 // Migrate: template_actions refactored to skill references — recreate if old schema
 const taColumns = db.prepare("PRAGMA table_info(template_actions)").all() as { name: string }[];
@@ -549,7 +575,7 @@ function rowToCharacter(row: CharacterRow): Character {
       const raw = JSON.parse(row.stats);
       // Migrate res -> spi
       if ("res" in raw && !("spi" in raw)) { raw.spi = raw.res; delete raw.res; }
-      return { hp: 100, spi: 10, ...raw };
+      return { hp: 1000, spi: 10, ...raw };
     })(),
     elementalResistance: { ...DEFAULT_ELEMENTAL, ...(row.elemental_resistance ? JSON.parse(row.elemental_resistance) : {}) },
     elementalDamage: { ...DEFAULT_ELEMENTAL, ...(row.elemental_damage ? JSON.parse(row.elemental_damage) : {}) },

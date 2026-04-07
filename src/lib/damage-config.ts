@@ -31,4 +31,4 @@ export const DAMAGE_CATEGORY_LABELS: Record<DamageCategory, string> = {
   healing: "Healing",
 };
 
-export const BASE_POWER = 10;
+export const BASE_POWER = 100;

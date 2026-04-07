@@ -345,6 +345,8 @@ function GridCell({
   onHoverCharacter,
   switchHighlight,
   onSwitchClick,
+  animClass,
+  damageFloats,
 }: {
   id: string;
   character?: Character;
@@ -358,6 +360,8 @@ function GridCell({
   onHoverCharacter?: (id: string | null) => void;
   switchHighlight?: boolean;
   onSwitchClick?: () => void;
+  animClass?: string;
+  damageFloats?: { id: string; amount: number; isHealing: boolean }[];
 }) {
   const charHp = character && hpMap ? {
     currentHp: hpMap[character.id] ?? character.stats.hp,
@@ -378,17 +382,33 @@ function GridCell({
       }`}
       onMouseEnter={() => character && onHoverCharacter?.(character.id)}
       onMouseLeave={() => onHoverCharacter?.(null)}
+      style={{ position: "relative" }}
     >
       {character ? (
-        <DraggableCharacter
-          character={character}
-          source={`${side}-${row}-${col}`}
-          flipImage={side === "left"}
-          isSelected={selectedCharId === character.id}
-          {...charHp}
-          photoOverride={character && formPhotoMap ? formPhotoMap[character.id] : undefined}
-          onSelect={() => onSelectCharacter?.(character.id)}
-        />
+        <div className={animClass ? `animate-${animClass}` : undefined} style={{ position: "relative" }}>
+          <DraggableCharacter
+            character={character}
+            source={`${side}-${row}-${col}`}
+            flipImage={side === "left"}
+            isSelected={selectedCharId === character.id}
+            {...charHp}
+            photoOverride={character && formPhotoMap ? formPhotoMap[character.id] : undefined}
+            onSelect={() => onSelectCharacter?.(character.id)}
+          />
+          {damageFloats && damageFloats.length > 0 && (
+            <div style={{ position: "absolute", left: "50%", top: 0, pointerEvents: "none", zIndex: 30 }}>
+              {damageFloats.map((d) => (
+                <div
+                  key={d.id}
+                  className={`animate-damage-float text-lg font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${d.isHealing ? "text-green-300" : "text-red-400"}`}
+                  style={{ position: "absolute", left: 0, top: 0, whiteSpace: "nowrap" }}
+                >
+                  {d.isHealing ? "+" : "-"}{d.amount}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
         <span className="text-[10px] text-gray-600">
           {COL_LABELS[col]}
@@ -643,6 +663,29 @@ export default function BattlefieldPage() {
   const [teleportRequest, setTeleportRequest] = useState<{ charId: string; destSide: string; instant?: boolean } | null>(null);
   // Tracks instant skills used this round: charId -> Set of skillIds
   const [instantUsedMap, setInstantUsedMap] = useState<Record<string, string[]>>({});
+  // Floating damage/heal numbers per character
+  const [damageFloats, setDamageFloats] = useState<{ id: string; charId: string; amount: number; isHealing: boolean }[]>([]);
+  // Animation state: charId -> css class ("sling-right" etc.)
+  const [animMap, setAnimMap] = useState<Record<string, string>>({});
+  const spawnDamageFloat = useCallback((charId: string, amount: number, isHealing: boolean) => {
+    if (amount <= 0) return;
+    const id = crypto.randomUUID();
+    setDamageFloats((prev) => [...prev, { id, charId, amount, isHealing }]);
+    setTimeout(() => {
+      setDamageFloats((prev) => prev.filter((d) => d.id !== id));
+    }, 1400);
+  }, []);
+  const triggerAnim = useCallback((charId: string, cls: string, durationMs: number) => {
+    setAnimMap((prev) => ({ ...prev, [charId]: cls }));
+    setTimeout(() => {
+      setAnimMap((prev) => {
+        if (prev[charId] !== cls) return prev;
+        const next = { ...prev };
+        delete next[charId];
+        return next;
+      });
+    }, durationMs + 20);
+  }, []);
   const [battleFormMap, setBattleFormMap] = useState<Record<string, string>>({}); // charId -> active formId
   const [skillLevelMap, setSkillLevelMap] = useState<Record<string, number>>({}); // skillId -> current level (1-3, default 1)
   const [expandedTemplateSkillId, setExpandedTemplateSkillId] = useState<string | null>(null);
@@ -1148,12 +1191,14 @@ export default function BattlefieldPage() {
           const dmg = Math.ceil(char.stats.hp * pct);
           const cur = currentHpMap[charId] ?? char.stats.hp;
           setCurrentHpMap((prev) => ({ ...prev, [charId]: Math.max(0, cur - dmg) }));
+          spawnDamageFloat(charId, dmg, false);
           addBattleLog(`${char.name} takes ${dmg} ${(p.damageType as string) ?? "true"} damage from ${b.effectName}.`);
         } else if (tag.type === "hot") {
           const pct = ((p.percent as number) ?? 5) / 100;
           const heal = Math.ceil(char.stats.hp * pct);
           const cur = currentHpMap[charId] ?? char.stats.hp;
           setCurrentHpMap((prev) => ({ ...prev, [charId]: Math.min(char.stats.hp, cur + heal) }));
+          spawnDamageFloat(charId, heal, true);
           addBattleLog(`${char.name} heals ${heal} HP from ${b.effectName}.`);
         } else if (tag.type === "skip-turn") {
           skipTurn = true;
@@ -1523,6 +1568,8 @@ export default function BattlefieldPage() {
                     hpMap={phase === "battle" ? currentHpMap : undefined}
                     formPhotoMap={formPhotoMap}
                     onHoverCharacter={phase === "battle" ? setHoveredCharId : undefined}
+                    animClass={phase === "battle" && getCharAtPos(teams[0], row, col) ? animMap[getCharAtPos(teams[0], row, col)!.id] : undefined}
+                    damageFloats={phase === "battle" && getCharAtPos(teams[0], row, col) ? damageFloats.filter((d) => d.charId === getCharAtPos(teams[0], row, col)!.id) : undefined}
                     switchHighlight={switchAdjacentCells.has(`${teams[0].side}-${row}-${col}`) || teleportEmptyCells.has(`${teams[0].side}-${row}-${col}`)}
                     onSwitchClick={() => {
                       const cellId = `${teams[0].side}-${row}-${col}`;
@@ -1565,6 +1612,8 @@ export default function BattlefieldPage() {
                     hpMap={phase === "battle" ? currentHpMap : undefined}
                     formPhotoMap={formPhotoMap}
                     onHoverCharacter={phase === "battle" ? setHoveredCharId : undefined}
+                    animClass={phase === "battle" && getCharAtPos(teams[1], row, col) ? animMap[getCharAtPos(teams[1], row, col)!.id] : undefined}
+                    damageFloats={phase === "battle" && getCharAtPos(teams[1], row, col) ? damageFloats.filter((d) => d.charId === getCharAtPos(teams[1], row, col)!.id) : undefined}
                     switchHighlight={switchAdjacentCells.has(`${teams[1].side}-${row}-${col}`) || teleportEmptyCells.has(`${teams[1].side}-${row}-${col}`)}
                     onSwitchClick={() => {
                       const cellId = `${teams[1].side}-${row}-${col}`;
@@ -2398,6 +2447,9 @@ export default function BattlefieldPage() {
                                       for (const r of resultPerTarget) next[r.tid] = r.newHp;
                                       return next;
                                     });
+                                    for (const r of resultPerTarget) {
+                                      if (r.amount > 0) spawnDamageFloat(r.tid, r.amount, r.isHealing);
+                                    }
                                     // Use energy
                                     if (expandedTemplateSkillId) useSkillEnergy(expandedTemplateSkillId);
                                     // Log
@@ -2916,14 +2968,41 @@ export default function BattlefieldPage() {
               return entry;
             });
 
-            // Apply all damage/healing
-            setCurrentHpMap((prev) => {
-              const next = { ...prev };
-              for (const { targetId, newHp } of redirectedEntries) {
-                next[targetId] = newHp;
+            // --- Attack choreography ---
+            // Attacker slingshot animation (only for damaging hits with at least one target).
+            const attackerSide = activeCharId ? teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side : undefined;
+            const hasDamageHit = redirectedEntries.some((e) => e.amount > 0 && !e.isHealing);
+            if (activeCharId && hasDamageHit && attackerSide) {
+              // left-side attacker lunges right; right-side attacker lunges left
+              const slingCls = attackerSide === "left" ? "sling-right" : "sling-left";
+              triggerAnim(activeCharId, slingCls, 650);
+            }
+            // Delay the HP apply + defender recoil + floating numbers to land at the peak of the lunge.
+            const applyHit = () => {
+              setCurrentHpMap((prev) => {
+                const next = { ...prev };
+                for (const { targetId, newHp } of redirectedEntries) {
+                  next[targetId] = newHp;
+                }
+                return next;
+              });
+              for (const entry of redirectedEntries) {
+                if (entry.amount <= 0) continue;
+                spawnDamageFloat(entry.targetId, entry.amount, entry.isHealing);
+                if (!entry.isHealing) {
+                  const defSide = teams.find((t) => t.placements.some((p) => p.characterId === entry.targetId))?.side;
+                  if (defSide) {
+                    const recoilCls = defSide === "left" ? "recoil-left" : "recoil-right";
+                    triggerAnim(entry.targetId, recoilCls, 550);
+                  }
+                }
               }
-              return next;
-            });
+            };
+            if (hasDamageHit) {
+              setTimeout(applyHit, 300);
+            } else {
+              applyHit();
+            }
             // Use energy
             useSkillEnergy(skillUsed.id);
             // HP cost (self-damage as % of caster's max HP)
@@ -2935,6 +3014,7 @@ export default function BattlefieldPage() {
                 const curHp = currentHpMap[activeCharId] ?? caster.stats.hp;
                 const newHp = Math.max(0, curHp - hpDmg);
                 setCurrentHpMap((prev) => ({ ...prev, [activeCharId]: newHp }));
+                spawnDamageFloat(activeCharId, hpDmg, false);
                 addBattleLog(`${caster.name} pays ${hpDmg} HP (${hpCostPct}% max HP) to use ${skillUsed.name}.`);
               }
             }
@@ -3406,6 +3486,7 @@ export default function BattlefieldPage() {
                 const attackerCurHp = currentHpMap[activeCharId] ?? attackerChar.stats.hp;
                 const attackerNewHp = Math.max(0, attackerCurHp - counterResult.finalDamage);
                 setCurrentHpMap((prev) => ({ ...prev, [activeCharId]: attackerNewHp }));
+                spawnDamageFloat(activeCharId, counterResult.finalDamage, false);
                 addBattleLog(`${defenderChar.name} counters with ${basicSkill.name} dealing ${counterResult.finalDamage} damage to ${attackerChar.name}!`);
               }
             }
