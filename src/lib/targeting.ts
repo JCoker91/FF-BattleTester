@@ -88,6 +88,54 @@ export function resolveTargets(
       return { mode: "aoe", targets: toTargetInfo(sameRow) };
     }
 
+    case "all-front-row-enemy": {
+      // All enemies in the frontmost column (col 0)
+      const frontRow = enemies.filter((e) => e.position.col === 0);
+      return { mode: "aoe", targets: toTargetInfo(frontRow) };
+    }
+
+    case "all-middle-row-enemy": {
+      const midRow = enemies.filter((e) => e.position.col === 1);
+      return { mode: "aoe", targets: toTargetInfo(midRow) };
+    }
+
+    case "all-back-row-enemy": {
+      const backRow = enemies.filter((e) => e.position.col === 2);
+      return { mode: "aoe", targets: toTargetInfo(backRow) };
+    }
+
+    case "front-two-rows-enemy": {
+      const frontTwo = enemies.filter((e) => e.position.col <= 1);
+      return { mode: "aoe", targets: toTargetInfo(frontTwo) };
+    }
+
+    case "back-two-rows-enemy": {
+      const backTwo = enemies.filter((e) => e.position.col >= 1);
+      return { mode: "aoe", targets: toTargetInfo(backTwo) };
+    }
+
+    case "same-line-enemy": {
+      // Enemies in the same row (lane) as the caster
+      if (!casterUnit) return { mode: "aoe", targets: [] };
+      const sameLine = enemies.filter((e) => e.position.row === casterUnit.position.row);
+      return { mode: "aoe", targets: toTargetInfo(sameLine) };
+    }
+
+    case "column-pierce-enemy": {
+      // Pick a single enemy column (frontmost first), hits that target plus all enemies behind in same row
+      // Player picks the row line; resolved as dropdown over frontmost enemies, then hits all behind on use
+      if (enemies.length === 0) return { mode: "dropdown", targets: [] };
+      // For now, expose as dropdown of frontmost-by-row, the actual "behind" expansion happens at apply time
+      const frontByRow = new Map<number, PlacedUnit>();
+      for (const e of enemies) {
+        const existing = frontByRow.get(e.position.row);
+        if (!existing || e.position.col < existing.position.col) {
+          frontByRow.set(e.position.row, e);
+        }
+      }
+      return { mode: "dropdown", targets: toTargetInfo(Array.from(frontByRow.values())) };
+    }
+
     case "target-ally":
     case "random-ally":
       return { mode: "dropdown", targets: toTargetInfo(allies) };

@@ -343,15 +343,25 @@ function RandomEffectPoolsEditor({
   pools,
   statusEffects,
   onChange,
+  mode = "random",
 }: {
   pools: RandomEffectPool[];
   statusEffects: StatusEffect[];
   onChange: (pools: RandomEffectPool[]) => void;
+  mode?: "random" | "choose" | "cycle";
 }) {
+  const labelText =
+    mode === "choose" ? "Choose Effect Pools" :
+    mode === "cycle" ? "Cycle Effect Pools" :
+    "Random Effect Pools";
+  const accentClass =
+    mode === "choose" ? "text-emerald-300" :
+    mode === "cycle" ? "text-purple-300" :
+    "text-cyan-300";
   return (
     <div className="border-t border-gray-800 pt-2 space-y-2">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-cyan-300 font-medium uppercase">Random Effect Pools</span>
+        <span className={`text-[10px] ${accentClass} font-medium uppercase`}>{labelText}</span>
         <button
           onClick={() => onChange([...pools, { pickCount: 1, effects: [] }])}
           className="text-[9px] px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400"
@@ -362,7 +372,7 @@ function RandomEffectPoolsEditor({
       {pools.map((pool, pi) => (
         <div key={pi} className="bg-gray-900/40 border border-gray-800 rounded p-2 space-y-1.5">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-cyan-300">Pool {pi + 1}: pick</span>
+            <span className={`text-[10px] ${accentClass}`}>Pool {pi + 1}: {mode === "choose" ? "choose" : mode === "cycle" ? "cycle (advances 1 each trigger)" : "pick"}</span>
             <input
               type="number"
               min={1}
@@ -1304,6 +1314,32 @@ export function SkillForm({
                   ))}
                 </select>
               </div>
+              {/* Range tags */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-500">Range:</span>
+                {(["melee", "ranged", "magic"] as const).map((tag) => {
+                  const active = level.rangeTags?.includes(tag) ?? false;
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => {
+                        const cur = level.rangeTags ?? [];
+                        const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag];
+                        updateLevel(i, { rangeTags: next.length > 0 ? next : undefined });
+                      }}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize ${
+                        active
+                          ? tag === "melee" ? "bg-orange-700/40 border-orange-500/60 text-orange-200"
+                          : tag === "ranged" ? "bg-cyan-700/40 border-cyan-500/60 text-cyan-200"
+                          : "bg-purple-700/40 border-purple-500/60 text-purple-200"
+                          : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300"
+                      }`}
+                    >
+                      {tag === "melee" ? "⚔" : tag === "ranged" ? "🏹" : "✨"} {tag}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {level.damageCategory && (
@@ -1391,6 +1427,132 @@ export function SkillForm({
                     <option value="current">Current HP</option>
                   </select>
                 </label>
+                <div className="flex items-center gap-1 text-[10px] text-gray-400 flex-wrap">
+                  <label className="flex items-center gap-1" title="Strip any imbue-tagged buffs from the caster after this skill's damage lands">
+                    <input
+                      type="checkbox"
+                      checked={!!level.consumesCasterImbue}
+                      onChange={(e) => updateLevel(i, { consumesCasterImbue: e.target.checked || undefined })}
+                    />
+                    Consume caster imbue
+                  </label>
+                </div>
+                <div className="flex items-start gap-1 text-[10px] text-gray-400 flex-wrap">
+                  <span className="text-gray-500" title="Skill is disabled in the action bar unless the caster has at least one of these statuses active">Requires any of:</span>
+                  <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                    {statusEffects.map((se) => {
+                      const list = level.requiresAnyStatus ?? [];
+                      const checked = list.includes(se.id);
+                      return (
+                        <label key={se.id} className={`flex items-center gap-0.5 px-1 py-0.5 rounded border ${checked ? "border-emerald-500/60 bg-emerald-900/30" : "border-gray-700 bg-gray-800"}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...list, se.id]
+                                : list.filter((x) => x !== se.id);
+                              updateLevel(i, { requiresAnyStatus: next.length > 0 ? next : undefined });
+                            }}
+                          />
+                          {se.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-gray-400 flex-wrap">
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={!!level.splashHit}
+                      onChange={(e) => updateLevel(i, { splashHit: e.target.checked
+                        ? { damageTier: "minor", damageCategory: "true", damageSourceOverride: "indirect", targetPattern: "adjacent-of-target", inheritElement: true }
+                        : undefined })}
+                    />
+                    Splash
+                  </label>
+                  {level.splashHit && (
+                    <>
+                      <select
+                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                        value={level.splashHit.targetPattern}
+                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, targetPattern: e.target.value as "adjacent-of-target" | "all-other-enemies" } })}
+                      >
+                        <option value="adjacent-of-target">Adjacent of target</option>
+                        <option value="all-other-enemies">All other enemies</option>
+                      </select>
+                      <select
+                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                        value={level.splashHit.damageTier}
+                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageTier: e.target.value } })}
+                      >
+                        {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => (
+                          <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                        value={level.splashHit.damageCategory}
+                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageCategory: e.target.value as "physical" | "magical" | "true" } })}
+                      >
+                        <option value="physical">Physical</option>
+                        <option value="magical">Magical</option>
+                        <option value="true">True</option>
+                      </select>
+                      <select
+                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                        value={level.splashHit.damageSourceOverride ?? "indirect"}
+                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageSourceOverride: e.target.value as "direct" | "aoe" | "indirect" } })}
+                      >
+                        <option value="direct">Direct</option>
+                        <option value="aoe">AOE</option>
+                        <option value="indirect">Indirect</option>
+                      </select>
+                      <label className="flex items-center gap-0.5">
+                        <input
+                          type="checkbox"
+                          checked={level.splashHit.inheritElement ?? true}
+                          onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, inheritElement: e.target.checked } })}
+                        />
+                        Inherit element
+                      </label>
+                    </>
+                  )}
+                </div>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                  Bonus vs status:
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none max-w-[120px]"
+                    value={level.bonusDamageVsStatus?.statusEffectId ?? ""}
+                    onChange={(e) => {
+                      const sid = e.target.value;
+                      if (!sid) {
+                        updateLevel(i, { bonusDamageVsStatus: undefined });
+                      } else {
+                        updateLevel(i, { bonusDamageVsStatus: { statusEffectId: sid, percent: level.bonusDamageVsStatus?.percent ?? 10 } });
+                      }
+                    }}
+                  >
+                    <option value="">— None —</option>
+                    {statusEffects.map((se) => (
+                      <option key={se.id} value={se.id}>{se.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    max={500}
+                    disabled={!level.bonusDamageVsStatus}
+                    className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none disabled:opacity-40"
+                    value={level.bonusDamageVsStatus?.percent ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
+                      if (level.bonusDamageVsStatus) updateLevel(i, { bonusDamageVsStatus: { ...level.bonusDamageVsStatus, percent: v } });
+                    }}
+                  />
+                  %
+                </label>
                 <label className="flex items-center gap-1 text-[10px] text-gray-400">
                   Stolen Energy:
                   <input
@@ -1477,6 +1639,18 @@ export function SkillForm({
               pools={level.randomEffectPools ?? []}
               statusEffects={statusEffects}
               onChange={(pools) => updateLevel(i, { randomEffectPools: pools.length > 0 ? pools : undefined })}
+            />
+            <RandomEffectPoolsEditor
+              mode="choose"
+              pools={level.chooseEffectPools ?? []}
+              statusEffects={statusEffects}
+              onChange={(pools) => updateLevel(i, { chooseEffectPools: pools.length > 0 ? pools : undefined })}
+            />
+            <RandomEffectPoolsEditor
+              mode="cycle"
+              pools={level.cycleEffectPools ?? []}
+              statusEffects={statusEffects}
+              onChange={(pools) => updateLevel(i, { cycleEffectPools: pools.length > 0 ? pools : undefined })}
             />
             {/* Resistance grants (for passive skills) */}
             <ResistanceGrantsEditor
@@ -1652,6 +1826,31 @@ export function SkillForm({
                 ))}
               </select>
             </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-gray-500">Range:</span>
+              {(["melee", "ranged", "magic"] as const).map((tag) => {
+                const active = form.levels[0].rangeTags?.includes(tag) ?? false;
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      const cur = form.levels[0].rangeTags ?? [];
+                      const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag];
+                      updateLevel(0, { rangeTags: next.length > 0 ? next : undefined });
+                    }}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize ${
+                      active
+                        ? tag === "melee" ? "bg-orange-700/40 border-orange-500/60 text-orange-200"
+                        : tag === "ranged" ? "bg-cyan-700/40 border-cyan-500/60 text-cyan-200"
+                        : "bg-purple-700/40 border-purple-500/60 text-purple-200"
+                        : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300"
+                    }`}
+                  >
+                    {tag === "melee" ? "⚔" : tag === "ranged" ? "🏹" : "✨"} {tag}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           {form.levels[0].damageCategory && (
             <div className="flex gap-2 items-center flex-wrap">
@@ -1750,6 +1949,18 @@ export function SkillForm({
             pools={form.levels[0].randomEffectPools ?? []}
             statusEffects={statusEffects}
             onChange={(pools) => updateLevel(0, { randomEffectPools: pools.length > 0 ? pools : undefined })}
+          />
+          <RandomEffectPoolsEditor
+            mode="choose"
+            pools={form.levels[0].chooseEffectPools ?? []}
+            statusEffects={statusEffects}
+            onChange={(pools) => updateLevel(0, { chooseEffectPools: pools.length > 0 ? pools : undefined })}
+          />
+          <RandomEffectPoolsEditor
+            mode="cycle"
+            pools={form.levels[0].cycleEffectPools ?? []}
+            statusEffects={statusEffects}
+            onChange={(pools) => updateLevel(0, { cycleEffectPools: pools.length > 0 ? pools : undefined })}
           />
           {/* Resistance grants for basic/innate */}
           <ResistanceGrantsEditor

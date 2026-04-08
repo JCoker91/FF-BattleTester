@@ -703,6 +703,32 @@ export default function CharacterDetailPage() {
                   <button onClick={() => setLinkingSkillId(null)} className="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
                 </div>
               )}
+              {/* Status-based variant trigger */}
+              {(() => {
+                const assign = charAssignments.find((cs) => cs.skillId === skill.id);
+                if (!assign?.variantGroupId) return null;
+                return (
+                  <div className="bg-gray-900/50 border border-gray-800 rounded p-2 ml-4 flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-purple-300 font-medium">Status trigger:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none"
+                      value={assign.statusConditionId ?? ""}
+                      onChange={(e) => {
+                        updateCharacterSkill({ ...assign, statusConditionId: e.target.value || null });
+                      }}
+                    >
+                      <option value="">— None (use form trigger) —</option>
+                      {statusEffects.map((se) => (
+                        <option key={se.id} value={se.id}>{se.name}</option>
+                      ))}
+                    </select>
+                    {assign.statusConditionId && (
+                      <span className="text-[10px] text-gray-500">Swaps in when this status is active on the caster</span>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Conditions editor for conditional skills */}
               {skill.skillType === "conditional" && (() => {
                 const assign = charAssignments.find((cs) => cs.skillId === skill.id);

@@ -21,6 +21,13 @@ export const TARGET_TYPES = [
   "random-enemy",
   "aoe-enemy",
   "self-row-enemy",
+  "all-front-row-enemy",
+  "all-middle-row-enemy",
+  "all-back-row-enemy",
+  "front-two-rows-enemy",
+  "back-two-rows-enemy",
+  "same-line-enemy",
+  "column-pierce-enemy",
   "target-ally",
   "target-ally-or-self",
   "random-ally",
@@ -33,10 +40,17 @@ export type TargetType = (typeof TARGET_TYPES)[number];
 
 export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "target-enemy": "Target Enemy",
-  "front-row-enemy": "Front Row Enemy",
+  "front-row-enemy": "Front Row Enemy (single)",
   "random-enemy": "Random Enemy",
-  "aoe-enemy": "AOE Enemy",
+  "aoe-enemy": "AOE Enemy (all)",
   "self-row-enemy": "Self-Row Enemy",
+  "all-front-row-enemy": "All Front Row Enemies",
+  "all-middle-row-enemy": "All Middle Row Enemies",
+  "all-back-row-enemy": "All Back Row Enemies",
+  "front-two-rows-enemy": "Front + Middle Rows",
+  "back-two-rows-enemy": "Middle + Back Rows",
+  "same-line-enemy": "Enemies in Caster's Line",
+  "column-pierce-enemy": "Column Pierce (front + behind)",
   "target-ally": "Target Ally",
   "target-ally-or-self": "Target Ally or Self",
   "random-ally": "Random Ally",
@@ -124,6 +138,7 @@ export interface SkillLevel {
   instant?: boolean;
   passive?: boolean; // "while equipped" — effects auto-apply permanently while skill is equipped
   damageCategory?: "physical" | "magical" | "true" | "healing";
+  rangeTags?: ("melee" | "ranged" | "magic")[]; // optional delivery tags; melee triggers back-row damage penalty
   damageTier?: string;
   randomTierPool?: string[]; // when damageTier is "random", restrict the pool to these tiers
   damageSourceOverride?: "direct" | "aoe" | "indirect"; // override the inferred direct/aoe category (e.g. mark a single-target skill as indirect)
@@ -133,6 +148,8 @@ export interface SkillLevel {
   ignoreSpirit?: number; // % of target's SPI to ignore (0-100), magical attacks only
   effects?: SkillEffect[]; // buff/debuff applications
   randomEffectPools?: RandomEffectPool[]; // pools of candidate effects, randomly picked at use time
+  chooseEffectPools?: RandomEffectPool[]; // pools of candidate effects, player picks at use time
+  cycleEffectPools?: RandomEffectPool[]; // pools of candidate effects, cycled through in order on each trigger (turn-start passive use)
   resistanceGrants?: ResistanceGrant[]; // passive resistance bonuses (status or elemental)
   dispels?: DispelAction[]; // remove buffs/debuffs from targets
   movements?: MovementAction[]; // grid position changes
@@ -144,6 +161,22 @@ export interface SkillLevel {
   giantSlayerMaxBonus?: number; // max % bonus damage at target full HP, scales linearly to 0 at 0% HP
   executeBonus?: { threshold: number; maxBonus: number }; // bonus % damage scaling up as target HP drops below threshold
   bonusHpDamage?: { percent: number; source: "max" | "current" }; // adds % of target HP as additional damage (same category, defended normally)
+  bonusDamageVsStatus?: { statusEffectId: string; percent: number }; // bonus % damage when the defender has the named status effect active
+  splashHit?: SplashHit; // secondary damage payload that hits additional targets after the primary hit lands
+  requiresAnyStatus?: string[]; // skill is disabled in the action bar unless the caster has at least one of these status effects active
+  consumesCasterImbue?: boolean; // after damage applies, strip all imbue-tagged buffs from the caster
+}
+
+export type SplashTargetPattern =
+  | "adjacent-of-target" // 4-directional neighbors of the primary target (same row ±1 col, or same col ±1 row)
+  | "all-other-enemies"; // every enemy on the opposing team except the primary target
+
+export interface SplashHit {
+  damageTier: string; // "minor" | "low" | "moderate" | "high" | "severe" | "massive" — uses the same multipliers
+  damageCategory: "physical" | "magical" | "true";
+  damageSourceOverride?: "direct" | "aoe" | "indirect"; // defaults to "indirect" — splash is rarely "direct"
+  targetPattern: SplashTargetPattern;
+  inheritElement?: boolean; // if true, splash inherits the primary attack's resolved element (default true)
   variableRepeat?: { color: EnergyColor | "any"; max: number }; // ramping cost: player chooses 1..max extra energies of this color to spend ("any" lets the player pick the color at use time), skill damage repeats once per energy spent (random-enemy re-rolls per hit)
 }
 
@@ -227,6 +260,7 @@ export interface CharacterSkill {
   characterId: string;
   skillId: string;
   formId: string | null; // null = available in all forms
+  statusConditionId?: string | null; // if set, this variant only swaps in / is available when this status is active on the caster
   variantGroupId: string | null; // character-specific variant linking
   conditions?: SkillCondition[]; // additional conditions for conditional skills (AND logic)
 }
@@ -325,6 +359,7 @@ export interface Character {
   photoUrl?: string;
   summary?: string;
   gender?: "male" | "female" | "other";
+  showInBench?: boolean; // when false, the character is hidden from the battlefield staging bench
 }
 
 export interface BattleState {
@@ -352,27 +387,45 @@ export function resolveFormView(
   const getSkill = (skillId: string) => allSkills.find((s) => s.id === skillId);
   const getAssignment = (skillId: string) => assignments.find((a) => a.skillId === skillId);
 
+  const activeBuffIds = new Set((battleState?.buffs ?? []).map((b) => b.effectId));
+
   const resolveSkill = (baseSkillId: string | null): Skill | null => {
     if (!baseSkillId) return null;
     const baseSkill = getSkill(baseSkillId);
     if (!baseSkill) return null;
     const baseAssign = getAssignment(baseSkillId);
     if (!baseAssign) return null;
-    // If there's a variant for the active form, use it
-    if (baseAssign.variantGroupId && activeFormId) {
-      const variantAssign = assignments.find(
+    if (baseAssign.variantGroupId) {
+      // Prefer status-based variants first (highest priority — they reflect dynamic battle state)
+      const statusVariant = assignments.find(
         (a) =>
           a.variantGroupId === baseAssign.variantGroupId &&
           a.skillId !== baseSkillId &&
-          a.formId === activeFormId
+          a.statusConditionId &&
+          activeBuffIds.has(a.statusConditionId)
       );
-      if (variantAssign) {
-        const variantSkill = getSkill(variantAssign.skillId);
-        if (variantSkill) return variantSkill;
+      if (statusVariant) {
+        const v = getSkill(statusVariant.skillId);
+        if (v) return v;
+      }
+      // Fall back to form-based variants
+      if (activeFormId) {
+        const formVariant = assignments.find(
+          (a) =>
+            a.variantGroupId === baseAssign.variantGroupId &&
+            a.skillId !== baseSkillId &&
+            a.formId === activeFormId
+        );
+        if (formVariant) {
+          const v = getSkill(formVariant.skillId);
+          if (v) return v;
+        }
       }
     }
     // If the assignment is form-restricted and doesn't match, hide it
     if (baseAssign.formId && baseAssign.formId !== activeFormId) return null;
+    // If the assignment is status-restricted and the status isn't active, hide it
+    if (baseAssign.statusConditionId && !activeBuffIds.has(baseAssign.statusConditionId)) return null;
     return baseSkill;
   };
 
@@ -398,6 +451,8 @@ export function resolveFormView(
       if (!skill || skill.skillType !== "conditional") return false;
       // Form check (legacy formId field)
       if (a.formId !== null && a.formId !== activeFormId) return false;
+      // Status check: if a status condition is set, that status must be active
+      if (a.statusConditionId && !activeBuffIds.has(a.statusConditionId)) return false;
       // Variant group check
       if (a.variantGroupId) {
         const hasVariantMatch = assignments.some(
@@ -530,5 +585,6 @@ export interface DamageResult {
   elementalModifier: number;
   finalDamage: number;
   isHealing: boolean;
+  element?: Element | null; // resolved element after imbue, etc.
   breakdown: string[];
 }

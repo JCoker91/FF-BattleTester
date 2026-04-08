@@ -87,8 +87,12 @@ function applyBuffStacking(
 function getAttackCategory(targetType?: TargetType, override?: "direct" | "aoe" | "indirect"): "direct" | "aoe" | "indirect" {
   if (override) return override;
   if (!targetType) return "indirect";
-  const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy"]);
-  const directTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "target-ally", "target-ally-or-self", "random-ally", "adjacent-ally"]);
+  const aoeTypes = new Set([
+    "aoe-enemy", "aoe-team", "self-row-enemy",
+    "all-front-row-enemy", "all-middle-row-enemy", "all-back-row-enemy",
+    "front-two-rows-enemy", "back-two-rows-enemy", "same-line-enemy",
+  ]);
+  const directTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "column-pierce-enemy", "target-ally", "target-ally-or-self", "random-ally", "adjacent-ally"]);
   if (aoeTypes.has(targetType)) return "aoe";
   if (directTypes.has(targetType)) return "direct";
   return "indirect";
@@ -209,6 +213,24 @@ function applyPassiveElementalGrants(
     result[g.targetId] = (result[g.targetId] ?? 100) + g.value;
   }
   return result;
+}
+
+function RangeTagIcons({ tags, size = "sm" }: { tags?: ("melee" | "ranged" | "magic")[]; size?: "sm" | "md" }) {
+  if (!tags || tags.length === 0) return null;
+  const sizeClass = size === "md" ? "text-xs px-1" : "text-[10px] px-0.5";
+  return (
+    <span className="inline-flex gap-0.5">
+      {tags.includes("melee") && (
+        <span title="Melee" className={`${sizeClass} text-orange-300`}>⚔</span>
+      )}
+      {tags.includes("ranged") && (
+        <span title="Ranged" className={`${sizeClass} text-cyan-300`}>🏹</span>
+      )}
+      {tags.includes("magic") && (
+        <span title="Magic" className={`${sizeClass} text-purple-300`}>✨</span>
+      )}
+    </span>
+  );
 }
 
 function SkillEffectDisplay({ effect }: { effect: SkillEffect }) {
@@ -653,6 +675,7 @@ export default function BattlefieldPage() {
   const [detailsTab, setDetailsTab] = useState<"stats" | "skills">("stats");
   const [stagingFormMap, setStagingFormMap] = useState<Record<string, string>>({}); // charId -> selected starting formId
   const [switchMode, setSwitchMode] = useState(false); // when active, clicking grid cells performs swap/move
+  const [switchUsedByChar, setSwitchUsedByChar] = useState<Set<string>>(new Set()); // chars who've already used switch this turn
   const [energyChooseRequest, setEnergyChooseRequest] = useState<
     | { kind: "steal"; count: number; sourceSide: string; destSide: string; attackerName: string }
     | { kind: "generate"; count: number; destSide: string; attackerName: string }
@@ -719,17 +742,70 @@ export default function BattlefieldPage() {
     }, durationMs + 20);
   }, []);
   const [battleFormMap, setBattleFormMap] = useState<Record<string, string>>({}); // charId -> active formId
+  // Cycle indices for cycleEffectPools: keyed by `${charId}|${skillId}|${poolIndex}` -> next index to apply
+  const [cycleIndexMap, setCycleIndexMap] = useState<Record<string, number>>({});
   const [skillLevelMap, setSkillLevelMap] = useState<Record<string, number>>({}); // skillId -> current level (1-3, default 1)
   const [expandedTemplateSkillId, setExpandedTemplateSkillId] = useState<string | null>(null);
   const [selectedTemplateActionId, setSelectedTemplateActionId] = useState<string | null>(null);
   const [templatePreviewTargetId, setTemplatePreviewTargetId] = useState<string>("");
   const [teamEnergy, setTeamEnergy] = useState<Record<string, Record<string, number>>>({});
-  const [battleLog, setBattleLog] = useState<string[]>([]);
+  type LogKind =
+    | "round"
+    | "damage"
+    | "heal"
+    | "buff"
+    | "debuff"
+    | "status"
+    | "defeat"
+    | "revive"
+    | "miss"
+    | "skill"
+    | "system";
+  interface BattleLogEntry {
+    id: number;
+    text: string;
+    kind: LogKind;
+    groupId: number; // entries that came in the same batch share a groupId for visual grouping
+  }
+  const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
   const [firedOnceEffects, setFiredOnceEffects] = useState<Set<string>>(new Set()); // "charId:skillId:effectIdx"
   const [defeatedCharIds, setDefeatedCharIds] = useState<Set<string>>(new Set());
 
+  const logIdRef = useRef(0);
+  const logGroupRef = useRef(0);
+  const lastLogTimeRef = useRef(0);
+
+  const classifyLog = (entry: string): LogKind => {
+    const t = entry.toLowerCase();
+    if (t.startsWith("round ") && !t.includes("dealing") && !t.includes("uses")) return "round";
+    if (t.includes("has been defeated") || t.includes("is defeated")) return "defeat";
+    if (t.includes("has been revived") || t.includes("revived")) return "revive";
+    if (t.includes("missed")) return "miss";
+    if (t.includes("healing ") && t.includes(" hp")) return "heal";
+    if (t.includes("damage")) return "damage";
+    if (t.includes("applied to") || t.includes("gains ")) {
+      if (t.includes("debuff") || t.includes("(-")) return "debuff";
+      return "buff";
+    }
+    if (t.includes("loses ") || t.includes("activated") || t.includes("counters")) return "status";
+    if (t.includes("uses ")) return "skill";
+    return "system";
+  };
+
   const addBattleLog = (entry: string) => {
-    setBattleLog((prev) => [...prev, entry]);
+    // Group entries that arrive within 80ms of each other (e.g. same turn cluster)
+    const now = Date.now();
+    if (now - lastLogTimeRef.current > 80) {
+      logGroupRef.current += 1;
+    }
+    lastLogTimeRef.current = now;
+    const newEntry: BattleLogEntry = {
+      id: ++logIdRef.current,
+      text: entry,
+      kind: classifyLog(entry),
+      groupId: logGroupRef.current,
+    };
+    setBattleLog((prev) => [...prev, newEntry]);
   };
 
   // Auto-switch forms when form-linked statuses are applied or removed
@@ -793,7 +869,7 @@ export default function BattlefieldPage() {
   }, [getCharacter, battleFormMap, getFormsForCharacter, buffsMap]);
 
   // Reset switch mode when turn changes
-  useEffect(() => { setSwitchMode(false); }, [currentTurnIndex, round]);
+  useEffect(() => { setSwitchMode(false); setSwitchUsedByChar(new Set()); }, [currentTurnIndex, round]);
 
   // Observe the middle column size and propagate its height to the side columns so
   // the battle log & details panel match the battlefield + active character panel.
@@ -1011,7 +1087,7 @@ export default function BattlefieldPage() {
   const placedIds = new Set(
     teams.flatMap((t) => t.placements.map((p) => p.characterId))
   );
-  const bench = characters.filter((c) => !placedIds.has(c.id));
+  const bench = characters.filter((c) => !placedIds.has(c.id) && c.showInBench !== false);
 
   const getCharAtPos = (
     team: Team,
@@ -1022,6 +1098,15 @@ export default function BattlefieldPage() {
       (p) => p.position.row === row && p.position.col === col
     );
     return placement ? getCharacter(placement.characterId) : undefined;
+  };
+
+  // Get the grid column for a character (0 = front, 1 = mid, 2 = back), or undefined if not on grid
+  const getCharCol = (charId: string): number | undefined => {
+    for (const team of teams) {
+      const p = team.placements.find((pp) => pp.characterId === charId);
+      if (p) return p.position.col;
+    }
+    return undefined;
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -1154,6 +1239,7 @@ export default function BattlefieldPage() {
       }
     }
     setBattleFormMap(formMap);
+    setCycleIndexMap({});
     setSkillLevelMap({});
     setTeamEnergy(generateTeamEnergy(formMap));
     setBattleLog([]);
@@ -1217,6 +1303,8 @@ export default function BattlefieldPage() {
     setHoveredCharId(null);
     setViewedCharId(null);
     setBattleFormMap({});
+    setCycleIndexMap({});
+    setSwitchUsedByChar(new Set());
   };
 
   // Tick buffs for a specific character (called when their turn ends)
@@ -1354,6 +1442,50 @@ export default function BattlefieldPage() {
           addBattleLog(`${char.name}'s ${skill.name}: ${se.name}${modText} applied to ${tName}.`);
         }
       }
+
+      // Process cycleEffectPools — pick the next effect in sequence per pool
+      const cyclePools = level.cycleEffectPools ?? [];
+      cyclePools.forEach((pool, poolIdx) => {
+        if (pool.effects.length === 0) return;
+        const cycleKey = `${charId}|${skill.id}|${poolIdx}`;
+        const curIdx = cycleIndexMap[cycleKey] ?? 0;
+        const eff = pool.effects[curIdx % pool.effects.length];
+        // Advance index for next time
+        setCycleIndexMap((prev) => ({ ...prev, [cycleKey]: (curIdx + 1) % pool.effects.length }));
+        const se = statusEffects.find((s) => s.id === eff.effectId);
+        if (!se) return;
+        // Cycle pool effects are mutually exclusive: remove any previously-applied buff
+        // whose effect is in the same pool (via effectId match).
+        const poolEffectIds = new Set(pool.effects.map((e) => e.effectId));
+        // Resolve targets
+        const effTargets = resolveTargets(eff.targetType, charId, teams, getCharacter);
+        const targetIds = effTargets.targets.map((t) => t.characterId);
+        const resolvedIds = targetIds.length > 0 ? targetIds : [charId];
+        const buff: Omit<BuffDebuff, "id"> = {
+          effectId: se.id,
+          effectName: se.name,
+          category: se.category,
+          stats: se.stats,
+          modifier: !se.stats.includes("none") ? eff.modifier : 0,
+          duration: eff.duration,
+          source: skill.name,
+          sourceCharId: charId,
+          appliedTurn: globalTurnId,
+          ...(se.tags ? { tags: se.tags } : {}),
+          ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
+        };
+        for (const tid of resolvedIds) {
+          setBuffsMap((prev) => {
+            // Strip any existing buff whose effect is in the same cycle pool
+            const existing = (prev[tid] ?? []).filter((b) => !poolEffectIds.has(b.effectId));
+            const { buffs: updated } = applyBuffStacking(existing, buff);
+            return { ...prev, [tid]: updated };
+          });
+          const tName = getCharacter(tid)?.name ?? "Unknown";
+          const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
+          addBattleLog(`${char.name}'s ${skill.name}: ${se.name}${modText} applied to ${tName}${eff.duration === -1 ? "" : ` for ${eff.duration} turns`}.`);
+        }
+      });
     }
 
     return skipTurn;
@@ -1592,8 +1724,12 @@ export default function BattlefieldPage() {
     }
     updateTeam({ ...team, placements: newPlacements });
     setSwitchMode(false);
-    // Switch counts as the character's turn
-    if (isLastTurn) { endRound(); } else { nextTurn(); }
+    // Switch is instant and free; mark the active character as having used their once-per-turn switch
+    setSwitchUsedByChar((prev) => {
+      const next = new Set(prev);
+      next.add(activeCharId);
+      return next;
+    });
   };
 
   // Map of charId -> form photo url for battle phase
@@ -1789,19 +1925,12 @@ export default function BattlefieldPage() {
                 </span>
               )}
             </div>
-            {isLastTurn ? (
+            {isLastTurn && (
               <button
                 onClick={endRound}
                 className="text-xs px-4 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white font-medium"
               >
                 End Round
-              </button>
-            ) : (
-              <button
-                onClick={nextTurn}
-                className="text-xs px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium"
-              >
-                Next Turn
               </button>
             )}
           </div>
@@ -1914,10 +2043,53 @@ export default function BattlefieldPage() {
                 Clear
               </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 scrollbar-thin">
-              {[...battleLog].reverse().map((entry, i) => (
-                <p key={i} className="text-[11px] text-gray-300">{entry}</p>
-              ))}
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 scrollbar-thin">
+              {(() => {
+                // Group entries by groupId, render newest group first
+                const reversed = [...battleLog].reverse();
+                const groups: BattleLogEntry[][] = [];
+                let currentGroup: BattleLogEntry[] = [];
+                let currentGid: number | null = null;
+                for (const entry of reversed) {
+                  if (entry.groupId !== currentGid) {
+                    if (currentGroup.length > 0) groups.push(currentGroup);
+                    currentGroup = [entry];
+                    currentGid = entry.groupId;
+                  } else {
+                    currentGroup.push(entry);
+                  }
+                }
+                if (currentGroup.length > 0) groups.push(currentGroup);
+
+                const colorFor = (kind: LogKind): string => {
+                  switch (kind) {
+                    case "round": return "text-yellow-300 font-semibold";
+                    case "damage": return "text-red-300";
+                    case "heal": return "text-green-300";
+                    case "buff": return "text-blue-300";
+                    case "debuff": return "text-purple-300";
+                    case "status": return "text-cyan-300";
+                    case "defeat": return "text-red-500 font-semibold";
+                    case "revive": return "text-emerald-400 font-semibold";
+                    case "miss": return "text-gray-500 italic";
+                    case "skill": return "text-amber-200";
+                    default: return "text-gray-400";
+                  }
+                };
+
+                return groups.map((group, gi) => (
+                  <div
+                    key={group[0].id}
+                    className={`animate-log-in py-1 px-1.5 rounded ${gi === 0 ? "bg-gray-800/40" : ""} ${gi !== groups.length - 1 ? "mb-1.5 border-b border-gray-800/60 pb-1.5" : ""}`}
+                  >
+                    {group.map((entry) => (
+                      <p key={entry.id} className={`text-[11px] leading-snug ${colorFor(entry.kind)}`}>
+                        {entry.text}
+                      </p>
+                    ))}
+                  </div>
+                ));
+              })()}
               {battleLog.length === 0 && (
                 <p className="text-[11px] text-gray-600 italic">No events yet.</p>
               )}
@@ -1971,7 +2143,7 @@ export default function BattlefieldPage() {
               })();
 
               return (
-                <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2">
+                <div key={activeCharId} className="bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2 animate-panel-in">
                   {/* Character info row */}
                   <div className="flex items-center gap-3">
                     <button
@@ -2032,7 +2204,10 @@ export default function BattlefieldPage() {
                       const maxLevel = 3;
                       // Status restrictions: stunned = all disabled, silenced = only allowed types
                       const isInstantUsed = !!skill.levels[levelIdx]?.instant && (instantUsedMap[activeCharId] ?? []).includes(skill.id);
-                      const isDisabledByStatus = isStunned || (restrictedSkillTypes !== null && !restrictedSkillTypes.has(type)) || isInstantUsed;
+                      // requiresAnyStatus: skill is disabled unless the caster has at least one of the listed statuses active
+                      const requiresList = skill.levels[levelIdx]?.requiresAnyStatus ?? [];
+                      const requiresUnmet = requiresList.length > 0 && !(activeBuffs ?? []).some((b) => requiresList.includes(b.effectId));
+                      const isDisabledByStatus = isStunned || (restrictedSkillTypes !== null && !restrictedSkillTypes.has(type)) || isInstantUsed || requiresUnmet;
                       const typeLabel = type === "conditional" ? "COND" : type.toUpperCase();
                       const typeColor = type === "innate" ? "text-purple-400" : type === "basic" ? "text-blue-400" : type === "ability" ? "text-green-400" : "text-amber-400";
                       const isLeveled = canLevel && currentLevel > 1;
@@ -2046,8 +2221,18 @@ export default function BattlefieldPage() {
                       const hasTemplate = !!(skill.levels[levelIdx]?.templateId);
                       const isExpanded = expandedTemplateSkillId === skill.id;
 
+                      const requiredNames = requiresUnmet ? requiresList.map((sid) => statusEffects.find((s) => s.id === sid)?.name).filter(Boolean).join(", ") : "";
+                      const disabledTitle = isStunned
+                        ? "Stunned"
+                        : restrictedSkillTypes !== null && !restrictedSkillTypes.has(type)
+                          ? "Silenced"
+                          : isInstantUsed
+                            ? "Already used this round (instant)"
+                            : requiresUnmet
+                              ? `Requires: ${requiredNames}`
+                              : undefined;
                       return (
-                        <div key={skill.id} className={`w-24 border rounded text-left transition-colors flex flex-col ${isExpanded ? "ring-1 ring-blue-400/50" : ""} ${isDisabledByStatus ? "opacity-40 pointer-events-none" : bgClass}`}>
+                        <div key={skill.id} title={disabledTitle} className={`w-24 border rounded text-left transition-colors flex flex-col ${isExpanded ? "ring-1 ring-blue-400/50" : ""} ${isDisabledByStatus ? "opacity-40 pointer-events-none" : bgClass}`}>
                           <button
                             onClick={() => {
                               if (isDisabledByStatus) return;
@@ -2134,26 +2319,34 @@ export default function BattlefieldPage() {
                         {/* Row 2: Basic + Switch + Pass (everything that costs no energy) */}
                         <div className="flex gap-1.5 items-stretch">
                           {aResolved.basic && renderSkillTile({ skill: aResolved.basic, type: "basic" })}
-                          <button
-                            onClick={() => setSwitchMode((m) => !m)}
-                            disabled={isSwitchBlocked || isStunned}
-                            title={isSwitchBlocked ? "Cannot switch — restricted by status" : isStunned ? "Cannot act — stunned" : undefined}
-                            className={`w-24 border rounded text-center transition-colors ${
-                              isSwitchBlocked || isStunned
-                                ? "bg-gray-900 border-gray-800 cursor-not-allowed opacity-50"
-                                : switchMode
-                                ? "bg-green-600 border-green-500 hover:bg-green-700"
-                                : "bg-gray-800 hover:bg-gray-700 border-gray-700"
-                            }`}
-                          >
-                            <span className={`text-[10px] font-medium ${switchMode ? "text-white" : "text-gray-400"}`}>
-                              {switchMode ? "Cancel" : "Switch"}
-                            </span>
-                          </button>
+                          {(() => {
+                            const switchUsed = activeCharId ? switchUsedByChar.has(activeCharId) : false;
+                            return (
+                              <button
+                                onClick={() => setSwitchMode((m) => !m)}
+                                disabled={isSwitchBlocked || isStunned || switchUsed}
+                                title={isSwitchBlocked ? "Cannot switch — restricted by status" : isStunned ? "Cannot act — stunned" : switchUsed ? "Already used switch this turn" : "Free, instant. Once per turn."}
+                                className={`w-24 border rounded text-center transition-colors ${
+                                  isSwitchBlocked || isStunned || switchUsed
+                                    ? "bg-gray-900 border-gray-800 cursor-not-allowed opacity-50"
+                                    : switchMode
+                                    ? "bg-green-600 border-green-500 hover:bg-green-700"
+                                    : "bg-gray-800 hover:bg-gray-700 border-gray-700"
+                                }`}
+                              >
+                                <span className={`text-[10px] font-medium ${switchMode ? "text-white" : "text-gray-400"}`}>
+                                  {switchMode ? "Cancel" : "Switch"}
+                                </span>
+                              </button>
+                            );
+                          })()}
                           <button
                             onClick={() => {
                               addBattleLog(`Round ${round}. ${aChar.name} passes their turn.`);
-                              if (isLastTurn) { endRound(); } else { nextTurn(); }
+                              // Small delay so the pass feels deliberate and the panel fade-in reads cleanly
+                              setTimeout(() => {
+                                if (isLastTurn) { endRound(); } else { nextTurn(); }
+                              }, 180);
                             }}
                             className="w-24 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-center transition-colors"
                           >
@@ -2262,8 +2455,8 @@ export default function BattlefieldPage() {
                       const dPassiveGrants2 = getPassiveResistanceGrants(targetChar, dFormId2, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
                       const dElemRes2 = applyPassiveElementalGrants(dElemRes2Base, dPassiveGrants2);
                       return calculateDamage(
-                        { stats: aStats2, elementalResistance: aChar2.elementalResistance, elementalDamage: aElemDmg2, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? aChar2.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0 },
-                        { stats: dStats2, elementalResistance: dElemRes2 as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? targetChar.stats.hp },
+                        { stats: aStats2, elementalResistance: aChar2.elementalResistance, elementalDamage: aElemDmg2, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? aChar2.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) },
+                        { stats: dStats2, elementalResistance: dElemRes2 as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? targetChar.stats.hp, col: getCharCol(tid) },
                         selSkill.levels[0]
                       );
                     };
@@ -2443,7 +2636,7 @@ export default function BattlefieldPage() {
                                           }
                                           const tName = getCharacter(tid)?.name ?? "Unknown";
                                           const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
-                                          addBattleLog(`${se.name}${modText} applied to ${tName} for ${eff.duration === -1 ? "∞" : `${eff.duration} turns`}.`);
+                                          addBattleLog(`${se.name}${modText} applied to ${tName}${eff.duration === -1 ? "" : ` for ${eff.duration} turns`}.`);
                                           setBuffsMap((prev) => {
                                             let existing = prev[tid] ?? [];
                                             if (se.formId) {
@@ -2548,7 +2741,7 @@ export default function BattlefieldPage() {
                                     const aForm3 = aFormId3 ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId3) : null;
                                     const aStats3 = aForm3?.statOverrides ? { ...attacker.stats, ...aForm3.statOverrides } : attacker.stats;
                                     const aElemDmg3 = aForm3?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm3.elementalDmgOverride } : attacker.elementalDamage;
-                                    const attackerCombat3 = { stats: aStats3, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg3, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0 };
+                                    const attackerCombat3 = { stats: aStats3, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg3, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
                                     // Apply to each target with fresh calculation
                                     const resultPerTarget: { tid: string; amount: number; isHealing: boolean; newHp: number }[] = [];
                                     for (const tid of targetIds) {
@@ -2560,7 +2753,7 @@ export default function BattlefieldPage() {
                                       const dElemRes3Base = dForm3?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm3.elementalResOverride } : targetChar.elementalResistance;
                                       const dPassiveGrants3 = getPassiveResistanceGrants(targetChar, dFormId3, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
                                       const dElemRes3 = applyPassiveElementalGrants(dElemRes3Base, dPassiveGrants3);
-                                      const result = calculateDamage(attackerCombat3, { stats: dStats3, elementalResistance: dElemRes3 as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? targetChar.stats.hp }, selSkill!.levels[0]);
+                                      const result = calculateDamage(attackerCombat3, { stats: dStats3, elementalResistance: dElemRes3 as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? targetChar.stats.hp, col: getCharCol(tid) }, selSkill!.levels[0]);
                                       const maxHp = targetChar.stats.hp;
                                       const cur = currentHpMap[tid] ?? maxHp;
                                       const newHp = result.isHealing ? Math.min(maxHp, cur + result.finalDamage) : Math.max(0, cur - result.finalDamage);
@@ -2876,7 +3069,7 @@ export default function BattlefieldPage() {
                 const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
                 const aStats = aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats;
                 const aElemDmg = aForm?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm.elementalDmgOverride } : attacker.elementalDamage;
-                const attackerCombat = { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0 };
+                const attackerCombat = { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
                 // Track running HP so repeat hits on the same target chain properly
                 const runningHp: Record<string, number> = {};
                 for (const e of rawTargetEntries) runningHp[e.targetId] = e.newHp;
@@ -2898,11 +3091,11 @@ export default function BattlefieldPage() {
                   const dPassiveGrants = getPassiveResistanceGrants(tChar, dFormId ?? null, skills, characterSkills.filter((cs) => cs.characterId === pick.characterId), skillLevelMap);
                   const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
                   const curHp = runningHp[pick.characterId] ?? currentHpMap[pick.characterId] ?? tChar.stats.hp;
-                  const result = calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes as typeof tChar.elementalResistance, elementalDamage: tChar.elementalDamage, buffs: buffsMap[pick.characterId] ?? [], currentHp: curHp }, _level);
+                  const result = calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes as typeof tChar.elementalResistance, elementalDamage: tChar.elementalDamage, buffs: buffsMap[pick.characterId] ?? [], currentHp: curHp, col: getCharCol(pick.characterId) }, _level);
                   const maxHp = tChar.stats.hp;
                   const newHp = result.isHealing ? Math.min(maxHp, curHp + result.finalDamage) : Math.max(0, curHp - result.finalDamage);
                   runningHp[pick.characterId] = newHp;
-                  extras.push({ targetId: pick.characterId, newHp, amount: result.finalDamage, isHealing: result.isHealing, category: _level.damageCategory });
+                  extras.push({ targetId: pick.characterId, newHp, amount: result.finalDamage, isHealing: result.isHealing, category: _level.damageCategory, element: result.element ?? _level.element ?? null });
                 }
                 rawTargetEntries = [...rawTargetEntries, ...extras];
                 const charSide = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
@@ -2968,8 +3161,8 @@ export default function BattlefieldPage() {
               }
             }
             const targetEntries = rawTargetEntries.map((entry) => {
-              // Only check miss/dodge for actual damage entries (not healing/0 dmg)
-              if (entry.isHealing || entry.amount <= 0) return entry;
+              // Only check miss/dodge for actual damage entries (not healing/0 dmg/splash)
+              if (entry.isHealing || entry.amount <= 0 || entry.isSplash) return entry;
               // Roll attacker's miss chance per target
               if (attackerMissPct > 0 && Math.random() * 100 < attackerMissPct) {
                 addBattleLog(`${attackerName}'s attack missed ${getCharacter(entry.targetId)?.name ?? "Unknown"}! (${attackerMissPct}% miss chance)`);
@@ -3001,8 +3194,8 @@ export default function BattlefieldPage() {
             const coverEvents: { originalName: string; coverName: string; originalAmount: number; newAmount: number }[] = [];
 
             const redirectedEntries = targetEntries.map((entry) => {
-              // Only redirect damage, not healing
-              if (entry.isHealing || entry.amount <= 0) return entry;
+              // Only redirect damage, not healing — and never redirect splash hits (they're indirect by design)
+              if (entry.isHealing || entry.amount <= 0 || entry.isSplash) return entry;
               const targetChar = getCharacter(entry.targetId);
               if (!targetChar) return entry;
               const targetMaxHp = targetChar.stats.hp;
@@ -3057,14 +3250,14 @@ export default function BattlefieldPage() {
                     const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
                     const aStats = aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats;
                     const aElemDmg = aForm?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm.elementalDmgOverride } : attacker.elementalDamage;
-                    const attackerCombat = { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0 };
+                    const attackerCombat = { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
                     const cFormId = battleFormMap[best.mateId];
                     const cForm = cFormId ? getFormsForCharacter(best.mateId).find((f) => f.id === cFormId) : null;
                     const cStats = cForm?.statOverrides ? { ...coverChar.stats, ...cForm.statOverrides } : coverChar.stats;
                     const cElemResBase = cForm?.elementalResOverride ? { ...coverChar.elementalResistance, ...cForm.elementalResOverride } : coverChar.elementalResistance;
                     const cPassiveGrants = getPassiveResistanceGrants(coverChar, cFormId ?? null, skills, characterSkills.filter((cs) => cs.characterId === best.mateId), skillLevelMap);
                     const cElemRes = applyPassiveElementalGrants(cElemResBase, cPassiveGrants);
-                    const defenderCombat = { stats: cStats, elementalResistance: cElemRes as typeof coverChar.elementalResistance, elementalDamage: coverChar.elementalDamage, buffs: buffsMap[best.mateId] ?? [], currentHp: best.hp };
+                    const defenderCombat = { stats: cStats, elementalResistance: cElemRes as typeof coverChar.elementalResistance, elementalDamage: coverChar.elementalDamage, buffs: buffsMap[best.mateId] ?? [], currentHp: best.hp, col: getCharCol(best.mateId) };
                     const newResult = calculateDamage(attackerCombat, defenderCombat, level);
                     const newAmount = newResult.finalDamage;
                     const coverNewHp = Math.max(0, best.hp - newAmount);
@@ -3104,6 +3297,17 @@ export default function BattlefieldPage() {
                     triggerAnim(entry.targetId, recoilCls, 550);
                   }
                 }
+              }
+              // Consume caster imbue: strip any imbue-tagged buffs from the caster after the hit lands.
+              if (skillUsed.levels[lvlIdx]?.consumesCasterImbue && activeCharId) {
+                const IMBUE_TAGS = new Set(["fire-imbue", "ice-imbue", "thunder-imbue"]);
+                setBuffsMap((prev) => {
+                  const list = prev[activeCharId] ?? [];
+                  const filtered = list.filter((b) => !b.tags?.some((t) => IMBUE_TAGS.has(t.type)));
+                  if (filtered.length === list.length) return prev;
+                  return { ...prev, [activeCharId]: filtered };
+                });
+                addBattleLog(`${attackerName}'s imbue is consumed.`);
               }
             };
             if (hasDamageHit) {
@@ -3152,24 +3356,27 @@ export default function BattlefieldPage() {
               });
               for (const t of nonCovered) {
                 const targetName = getCharacter(t.targetId)?.name ?? "Unknown";
+                const elemPart = t.element ? `${t.element} ` : "";
                 const dmgText = t.isHealing
                   ? `healing ${targetName} for ${t.amount} HP`
-                  : `dealing ${t.amount} ${t.category ?? "physical"} damage to ${targetName}`;
+                  : `dealing ${t.amount} ${t.category ?? "physical"} ${elemPart}damage to ${targetName}`;
                 addBattleLog(`${attackerName} ${dmgText}.`);
               }
             } else if (redirectedEntries.length === 1) {
               const t = redirectedEntries[0];
               const targetName = getCharacter(t.targetId)?.name ?? "Unknown";
+              const elemPart = t.element ? `${t.element} ` : "";
               const dmgText = t.isHealing
                 ? `healing ${targetName} for ${t.amount} HP`
-                : `dealing ${t.amount} ${t.category ?? "physical"} damage to ${targetName}`;
+                : `dealing ${t.amount} ${t.category ?? "physical"} ${elemPart}damage to ${targetName}`;
               addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} ${dmgText}.`);
             } else {
               const totalDmg = redirectedEntries.reduce((sum, t) => sum + t.amount, 0);
               const isHealing = redirectedEntries[0]?.isHealing ?? false;
+              const elemPart = redirectedEntries[0]?.element ? `${redirectedEntries[0].element} ` : "";
               const dmgText = isHealing
                 ? `healing ${redirectedEntries.length} targets for ${totalDmg} total HP`
-                : `dealing ${totalDmg} total ${redirectedEntries[0]?.category ?? "physical"} damage to ${redirectedEntries.length} targets`;
+                : `dealing ${totalDmg} total ${redirectedEntries[0]?.category ?? "physical"} ${elemPart}damage to ${redirectedEntries.length} targets`;
               addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} ${dmgText}.`);
             }
             // Apply dispels (remove buffs/debuffs from targets)
@@ -3429,7 +3636,8 @@ export default function BattlefieldPage() {
               const picks = shuffled.slice(0, Math.min(pool.pickCount, pool.effects.length));
               rolledFromPools.push(...picks);
             }
-            const allLevelEffects = [...baseEffects, ...rolledFromPools];
+            const chosenFromPools = opts?.chosenPoolEffects ?? [];
+            const allLevelEffects = [...baseEffects, ...rolledFromPools, ...chosenFromPools];
             const didDealDamage = targetEntries.length > 0 && !targetEntries[0]?.isHealing;
             // Filter effects by trigger: on-use always fires, on-attack-hit only if damage was dealt
             const levelEffects = allLevelEffects.filter((eff) => {
@@ -3454,9 +3662,9 @@ export default function BattlefieldPage() {
                   resolvedIds = [activeCharId];
                 } else if (effIsEnemy && redirectedEntries.length > 0 && skillTargetType && enemyTargetTypes.has(skillTargetType)) {
                   // Use redirected entries so cover redirect also transfers on-hit effects to the cover user
-                  resolvedIds = redirectedEntries.map((t) => t.targetId);
+                  resolvedIds = redirectedEntries.filter((t) => !t.isSplash).map((t) => t.targetId);
                 } else if (effIsAlly && redirectedEntries.length > 0 && skillTargetType && allyTargetTypes.has(skillTargetType)) {
-                  resolvedIds = redirectedEntries.map((t) => t.targetId);
+                  resolvedIds = redirectedEntries.filter((t) => !t.isSplash).map((t) => t.targetId);
                 } else {
                   const effTargets = resolveTargets(eff.targetType, activeCharId, teams, getCharacter);
                   resolvedIds = effTargets.targets.map((t) => t.characterId);
@@ -3514,6 +3722,12 @@ export default function BattlefieldPage() {
                         return !bSe?.formId || bSe.id === se.id;
                       });
                     }
+                    // Imbues are mutually exclusive: applying any imbue strips existing imbue-bearing buffs.
+                    const IMBUE_TAGS = new Set(["fire-imbue", "ice-imbue", "thunder-imbue"]);
+                    const incomingHasImbue = se.tags?.some((t) => IMBUE_TAGS.has(t.type));
+                    if (incomingHasImbue) {
+                      existing = existing.filter((b) => !b.tags?.some((t) => IMBUE_TAGS.has(t.type)));
+                    }
                     const { buffs: updated, triggered } = applyBuffStacking(existing, buff);
                     if (triggered) {
                       const grantEffect = statusEffects.find((s) => s.id === triggered);
@@ -3533,7 +3747,7 @@ export default function BattlefieldPage() {
                   });
                   const tName = getCharacter(tid)?.name ?? "Unknown";
                   const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
-                  addBattleLog(`${se.name}${modText} applied to ${tName} for ${eff.duration} turns.`);
+                  addBattleLog(`${se.name}${modText} applied to ${tName}${eff.duration === -1 ? "" : ` for ${eff.duration} turns`}.`);
                   // Floating status label + self-buff flash.
                   // Delay so status labels appear after the damage number when this skill dealt damage.
                   const statusDelay = hasDamageHit ? 360 : 0;
@@ -3557,7 +3771,7 @@ export default function BattlefieldPage() {
             if (activeCharId && level?.damageCategory && (level.damageCategory === "physical" || level.damageCategory === "magical")) {
               const skillCat = level.damageCategory;
               for (const entry of redirectedEntries) {
-                if (entry.isHealing || entry.amount <= 0) continue;
+                if (entry.isHealing || entry.amount <= 0 || entry.isSplash) continue;
                 // Skip if defender is defeated
                 const defenderHp = currentHpMap[entry.targetId] - entry.amount; // approximate post-hit HP
                 if (defenderHp <= 0) continue;
@@ -3591,7 +3805,7 @@ export default function BattlefieldPage() {
                 const dForm = dFormId ? getFormsForCharacter(entry.targetId).find((f) => f.id === dFormId) : null;
                 const dStats = dForm?.statOverrides ? { ...defenderChar.stats, ...dForm.statOverrides } : defenderChar.stats;
                 const dElemDmg = dForm?.elementalDmgOverride ? { ...defenderChar.elementalDamage, ...dForm.elementalDmgOverride } : defenderChar.elementalDamage;
-                const counterAttacker = { stats: dStats, elementalResistance: defenderChar.elementalResistance, elementalDamage: dElemDmg, buffs: defenderBuffs, currentHp: defenderHp };
+                const counterAttacker = { stats: dStats, elementalResistance: defenderChar.elementalResistance, elementalDamage: dElemDmg, buffs: defenderBuffs, currentHp: defenderHp, col: getCharCol(entry.targetId) };
                 // Original attacker as new defender
                 const aFormId = battleFormMap[activeCharId] ?? null;
                 const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
@@ -3599,7 +3813,7 @@ export default function BattlefieldPage() {
                 const aElemResBase = aForm?.elementalResOverride ? { ...attackerChar.elementalResistance, ...aForm.elementalResOverride } : attackerChar.elementalResistance;
                 const aPassiveGrants = getPassiveResistanceGrants(attackerChar, aFormId, skills, characterSkills.filter((cs) => cs.characterId === activeCharId), skillLevelMap);
                 const aElemRes = applyPassiveElementalGrants(aElemResBase, aPassiveGrants);
-                const counterDefender = { stats: aStats, elementalResistance: aElemRes as typeof attackerChar.elementalResistance, elementalDamage: attackerChar.elementalDamage, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attackerChar.stats.hp };
+                const counterDefender = { stats: aStats, elementalResistance: aElemRes as typeof attackerChar.elementalResistance, elementalDamage: attackerChar.elementalDamage, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attackerChar.stats.hp, col: getCharCol(activeCharId) };
                 const counterResult = calculateDamage(counterAttacker, counterDefender, basicSkill.levels[0]);
                 const attackerCurHp = currentHpMap[activeCharId] ?? attackerChar.stats.hp;
                 const attackerNewHp = Math.max(0, attackerCurHp - counterResult.finalDamage);
@@ -4260,6 +4474,7 @@ function BattleSidePanel({
                         <span className="text-sm font-semibold text-white">
                           {skill.name}
                         </span>
+                        <RangeTagIcons tags={skill.levels[0].rangeTags} />
                         {skill.levels[0].cost.length > 0 && (
                           <EnergyCostDisplay cost={skill.levels[0].cost} />
                         )}
@@ -4518,7 +4733,11 @@ function CharacterDetailPanel({
   const charAssigns = characterSkills.filter((cs) => cs.characterId === characterId);
   // Filter skills by form — only show skills available in the active form
   const formFilteredAssigns = charAssigns.filter((cs) => cs.formId === null || cs.formId === activeFormId);
-  const formSkillIds = new Set(formFilteredAssigns.map((cs) => cs.skillId));
+  // Hide status-conditional variants (e.g. Flamestrike/Froststrike/Sparkstrike) — only the base
+  // skill of a variant group is equippable; the variants swap in automatically when their
+  // status condition is met.
+  const equippableAssigns = formFilteredAssigns.filter((cs) => !cs.statusConditionId);
+  const formSkillIds = new Set(equippableAssigns.map((cs) => cs.skillId));
   const baseSkills = skills.filter(
     (s) => formSkillIds.has(s.id) && s.skillType !== "conditional"
   );
@@ -4698,7 +4917,7 @@ function SkillModal({
   currentHpMap?: Record<string, number>;
   skillLevelMap?: Record<string, number>;
   onApplyDamage?: (targetId: string, newHp: number) => void;
-  onApplyAndUse?: (targets: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string }[], skill: Skill, opts?: { variableRepeats?: number; variableColor?: EnergyColor; variableSpend?: Partial<Record<EnergyColor, number>> }) => void;
+  onApplyAndUse?: (targets: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null; isSplash?: boolean }[], skill: Skill, opts?: { variableRepeats?: number; variableColor?: EnergyColor; variableSpend?: Partial<Record<EnergyColor, number>>; chosenPoolEffects?: SkillEffect[] }) => void;
   canAfford?: boolean;
   stolenEnergyByChar?: Record<string, number>;
   teamEnergy?: Record<string, Partial<Record<EnergyColor | "rainbow", number>>>;
@@ -4706,6 +4925,8 @@ function SkillModal({
 }) {
   const { characterSkills: modalCharSkills } = useStore();
   const [previewTargetId, setPreviewTargetId] = useState<string>("");
+  // Player choices for chooseEffectPools: poolIndex -> selected effect indices
+  const [poolChoices, setPoolChoices] = useState<Record<number, number[]>>({});
   const currentSkillLevel = skillLevelMap?.[skill.id] ?? 1;
   const [previewLevel, setPreviewLevel] = useState(currentSkillLevel - 1);
   const [variableRepeats, setVariableRepeats] = useState(1);
@@ -4755,6 +4976,7 @@ function SkillModal({
             <span className="text-[10px] text-gray-500 uppercase font-medium">
               {SKILL_TYPE_LABELS[skill.skillType]}
             </span>
+            <RangeTagIcons tags={skill.levels[0].rangeTags} size="md" />
           </div>
           <button
             onClick={onClose}
@@ -4948,12 +5170,145 @@ function SkillModal({
           const isAoe = targeting.mode === "aoe";
           const isSelf = targeting.mode === "self";
 
+          // Choose-effect pools (for skills like Elemental Strike that deal damage AND let the player pick a follow-up effect)
+          const damageChoosePools = level.chooseEffectPools ?? [];
+          const damageChosenPoolEffects: SkillEffect[] = [];
+          let damageAllChosen = true;
+          damageChoosePools.forEach((pool, pi) => {
+            const sel = poolChoices[pi] ?? [];
+            if (sel.length < pool.pickCount) damageAllChosen = false;
+            sel.forEach((ei) => {
+              if (pool.effects[ei]) damageChosenPoolEffects.push(pool.effects[ei]);
+            });
+          });
+          const renderChoosePoolPicker = () => damageChoosePools.length === 0 ? null : (
+            <div className="space-y-2 border-t border-gray-700 pt-2 mt-1">
+              {damageChoosePools.map((pool, pi) => {
+                const selected = poolChoices[pi] ?? [];
+                const remaining = pool.pickCount - selected.length;
+                const toggle = (ei: number) => {
+                  const cur = poolChoices[pi] ?? [];
+                  if (cur.includes(ei)) {
+                    setPoolChoices({ ...poolChoices, [pi]: cur.filter((x) => x !== ei) });
+                  } else if (cur.length < pool.pickCount) {
+                    setPoolChoices({ ...poolChoices, [pi]: [...cur, ei] });
+                  }
+                };
+                return (
+                  <div key={`dc-${pi}`}>
+                    <span className="text-[10px] text-emerald-300 uppercase font-medium">
+                      Choose {pool.pickCount} of {pool.effects.length}
+                      {remaining > 0 && <span className="ml-2 text-yellow-400 normal-case">({remaining} more)</span>}
+                    </span>
+                    <div className="space-y-1 mt-1">
+                      {pool.effects.map((eff, ei) => {
+                        const isSel = selected.includes(ei);
+                        return (
+                          <button
+                            key={ei}
+                            type="button"
+                            onClick={() => toggle(ei)}
+                            className={`w-full text-left rounded px-2 py-1 border transition-colors ${isSel ? "bg-emerald-900/40 border-emerald-500/60" : "bg-gray-800 border-gray-700 hover:border-gray-600"}`}
+                          >
+                            <SkillEffectDisplay effect={eff} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+
           // Resolve attacker combat stats
           const aFormId = battleFormMap?.[attackerChar.id];
           const aForm = aFormId && getFormsForCharacter ? getFormsForCharacter(attackerChar.id).find((f) => f.id === aFormId) : null;
           const aStats = aForm?.statOverrides ? { ...attackerChar.stats, ...aForm.statOverrides } : attackerChar.stats;
           const aElemDmg = aForm?.elementalDmgOverride ? { ...attackerChar.elementalDamage, ...aForm.elementalDmgOverride } : attackerChar.elementalDamage;
-          const attackerCombat = { stats: aStats, elementalResistance: attackerChar.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap?.[attackerChar.id] ?? [], currentHp: currentHpMap?.[attackerChar.id] ?? attackerChar.stats.hp, stolenEnergyCount: stolenEnergyByChar?.[attackerChar.id] ?? 0 };
+          // Resolve grid columns from modalTeams for row modifiers
+          const colOf = (cid: string): number | undefined => {
+            for (const team of modalTeams ?? []) {
+              const p = team.placements.find((pp) => pp.characterId === cid);
+              if (p) return p.position.col;
+            }
+            return undefined;
+          };
+          const attackerCombat = { stats: aStats, elementalResistance: attackerChar.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap?.[attackerChar.id] ?? [], currentHp: currentHpMap?.[attackerChar.id] ?? attackerChar.stats.hp, stolenEnergyCount: stolenEnergyByChar?.[attackerChar.id] ?? 0, col: colOf(attackerChar.id) };
+
+          // Splash hit helper: compute splash damage for a target using a synthetic level that
+          // pulls tier/category/source/element from the splash config. Inherits the parent skill's
+          // resolved element when inheritElement is true.
+          const calcSplashForTarget = (targetId: string, primaryResult: DamageResult | null): DamageResult | null => {
+            const splash = level.splashHit;
+            if (!splash) return null;
+            const targetChar = getCharacterFn(targetId);
+            if (!targetChar) return null;
+            const inheritedElement = splash.inheritElement === false ? null : (primaryResult?.element ?? level.element ?? null);
+            const splashLevel: SkillLevel = {
+              ...level,
+              damageCategory: splash.damageCategory,
+              damageTier: splash.damageTier,
+              damageSourceOverride: splash.damageSourceOverride ?? "indirect",
+              element: (inheritedElement ?? undefined) as SkillLevel["element"],
+              // Strip riders/scalings — splash is the rider itself, not a separate amplified hit
+              ignoreDefense: undefined,
+              ignoreSpirit: undefined,
+              casterMissingHpScaling: undefined,
+              giantSlayerMaxBonus: undefined,
+              executeBonus: undefined,
+              bonusHpDamage: undefined,
+              bonusDamageVsStatus: undefined,
+              stolenEnergyScaling: undefined,
+              splashHit: undefined,
+            };
+            const dFormId = battleFormMap?.[targetId];
+            const dForm = dFormId && getFormsForCharacter ? getFormsForCharacter(targetId).find((f) => f.id === dFormId) : null;
+            const dStats = dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats;
+            const dElemResBase = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
+            const dPassiveGrants = getPassiveResistanceGrants(targetChar, dFormId ?? null, allSkills, modalCharSkills.filter((cs) => cs.characterId === targetId), skillLevelMap ?? {});
+            const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
+            return calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap?.[targetId] ?? [], currentHp: currentHpMap?.[targetId] ?? targetChar.stats.hp, col: colOf(targetId) }, splashLevel);
+          };
+
+          // Resolve splash target IDs from a primary target ID + splash pattern.
+          const resolveSplashTargets = (primaryId: string): string[] => {
+            const splash = level.splashHit;
+            if (!splash || !modalTeams) return [];
+            const allUnits = modalTeams.flatMap((t) => t.placements.map((p) => ({ charId: p.characterId, side: t.side, row: p.position.row, col: p.position.col })));
+            const primary = allUnits.find((u) => u.charId === primaryId);
+            if (!primary) return [];
+            if (splash.targetPattern === "all-other-enemies") {
+              // Splash hits everyone on the same side as the primary target (i.e. the rest of the enemy team)
+              return allUnits
+                .filter((u) => u.side === primary.side && u.charId !== primaryId)
+                .map((u) => u.charId);
+            }
+            // adjacent-of-target: 4-directional neighbors on the same side as the primary target
+            return allUnits
+              .filter((u) => u.side === primary.side && u.charId !== primaryId)
+              .filter((u) => {
+                const dr = Math.abs(u.row - primary.row);
+                const dc = Math.abs(u.col - primary.col);
+                return (dr === 1 && dc === 0) || (dr === 0 && dc === 1);
+              })
+              .map((u) => u.charId);
+          };
+
+          const buildSplashEntries = (primaryId: string, primaryResult: DamageResult | null) => {
+            const ids = resolveSplashTargets(primaryId);
+            const out: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null; isSplash: boolean }[] = [];
+            for (const sid of ids) {
+              const r = calcSplashForTarget(sid, primaryResult);
+              if (!r) continue;
+              const sc = getCharacterFn!(sid);
+              const sMax = sc?.stats.hp ?? 100;
+              const sCur = (currentHpMap ?? {})[sid] ?? sMax;
+              const newHp = Math.max(0, sCur - r.finalDamage);
+              out.push({ targetId: sid, newHp, amount: r.finalDamage, isHealing: false, category: level.splashHit?.damageCategory, element: r.element ?? null, isSplash: true });
+            }
+            return out;
+          };
 
           const calcForTarget = (targetId: string): DamageResult | null => {
             const targetChar = getCharacterFn(targetId);
@@ -4964,7 +5319,7 @@ function SkillModal({
             const dElemResBase = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
             const dPassiveGrants = getPassiveResistanceGrants(targetChar, dFormId ?? null, allSkills, modalCharSkills.filter((cs) => cs.characterId === targetId), skillLevelMap ?? {});
             const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
-            return calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap?.[targetId] ?? [], currentHp: currentHpMap?.[targetId] ?? targetChar.stats.hp }, level);
+            return calculateDamage(attackerCombat, { stats: dStats, elementalResistance: dElemRes as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap?.[targetId] ?? [], currentHp: currentHpMap?.[targetId] ?? targetChar.stats.hp, col: colOf(targetId) }, level);
           };
 
           const applyToTarget = (targetId: string, result: DamageResult) => {
@@ -5030,22 +5385,35 @@ function SkillModal({
                       Self-damage: {level.hpCost}% max HP
                     </div>
                   )}
+                  {renderChoosePoolPicker()}
                   {onApplyAndUse && results.length > 0 && skill.skillType !== "innate" && (
                     <button
                       onClick={() => {
-                        const entries = results.filter((r) => r.result).map(({ target, result }) => {
+                        const entries: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null; isSplash?: boolean }[] = results.filter((r) => r.result).map(({ target, result }) => {
                           const t = getCharacterFn!(target.characterId);
                           const maxHp = t?.stats.hp ?? 100;
                           const cur = (currentHpMap ?? {})[target.characterId] ?? maxHp;
                           const newHp = result!.isHealing ? Math.min(maxHp, cur + result!.finalDamage) : Math.max(0, cur - result!.finalDamage);
-                          return { targetId: target.characterId, newHp, amount: result!.finalDamage, isHealing: result!.isHealing, category: level.damageCategory };
+                          return { targetId: target.characterId, newHp, amount: result!.finalDamage, isHealing: result!.isHealing, category: level.damageCategory, element: result!.element ?? level.element ?? null };
                         });
-                        onApplyAndUse(entries, skill, { variableRepeats, variableColor, variableSpend });
+                        // Splash hit on AOE: append splash for each primary entry (deduped)
+                        if (level.splashHit) {
+                          const seen = new Set(entries.map((e) => e.targetId));
+                          for (const primary of [...entries]) {
+                            const splashEntries = buildSplashEntries(primary.targetId, results.find((r) => r.target.characterId === primary.targetId)?.result ?? null);
+                            for (const se of splashEntries) {
+                              if (seen.has(se.targetId)) continue;
+                              seen.add(se.targetId);
+                              entries.push(se);
+                            }
+                          }
+                        }
+                        onApplyAndUse(entries, skill, { variableRepeats, variableColor, variableSpend, chosenPoolEffects: damageChosenPoolEffects });
                       }}
-                      disabled={canAfford === false || _variableAnyBlocked}
-                      className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${canAfford === false || _variableAnyBlocked ? "bg-gray-700 text-gray-500 cursor-not-allowed" : isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
+                      disabled={canAfford === false || _variableAnyBlocked || !damageAllChosen}
+                      className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${canAfford === false || _variableAnyBlocked || !damageAllChosen ? "bg-gray-700 text-gray-500 cursor-not-allowed" : isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
                     >
-                      {canAfford === false ? "Not Enough Energy" : _variableAnyBlocked ? "Select Energy" : "Apply and Use"}
+                      {canAfford === false ? "Not Enough Energy" : _variableAnyBlocked ? "Select Energy" : !damageAllChosen ? "Pick Effects First" : "Apply and Use"}
                     </button>
                   )}
                 </div>
@@ -5096,12 +5464,37 @@ function SkillModal({
                             const maxHp = t?.stats.hp ?? 100;
                             const cur = (currentHpMap ?? {})[chosenId] ?? maxHp;
                             const newHp = freshResult.isHealing ? Math.min(maxHp, cur + freshResult.finalDamage) : Math.max(0, cur - freshResult.finalDamage);
-                            onApplyAndUse([{ targetId: chosenId, newHp, amount: freshResult.finalDamage, isHealing: freshResult.isHealing, category: level.damageCategory }], skill, { variableRepeats, variableColor, variableSpend });
+                            const baseEntry = { targetId: chosenId, newHp, amount: freshResult.finalDamage, isHealing: freshResult.isHealing, category: level.damageCategory, element: freshResult.element ?? level.element ?? null };
+                            // Column pierce: also hit any enemies behind the chosen target in the same row
+                            const entries: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null; isSplash?: boolean }[] = [baseEntry];
+                            // Splash hit: append secondary damage to additional targets
+                            if (level.splashHit) {
+                              const splashEntries = buildSplashEntries(chosenId, freshResult);
+                              entries.push(...splashEntries);
+                            }
+                            if (level.targetType === "column-pierce-enemy" && modalTeams) {
+                              const chosenPos = modalTeams.flatMap((tm) => tm.placements.map((p) => ({ ...p, side: tm.side }))).find((p) => p.characterId === chosenId);
+                              if (chosenPos) {
+                                const behind = modalTeams
+                                  .flatMap((tm) => tm.placements.map((p) => ({ ...p, side: tm.side })))
+                                  .filter((p) => p.side === chosenPos.side && p.position.row === chosenPos.position.row && p.position.col > chosenPos.position.col);
+                                for (const b of behind) {
+                                  const r = calcForTarget(b.characterId);
+                                  if (!r) continue;
+                                  const bChar = getCharacterFn!(b.characterId);
+                                  const bMax = bChar?.stats.hp ?? 100;
+                                  const bCur = (currentHpMap ?? {})[b.characterId] ?? bMax;
+                                  const bNewHp = r.isHealing ? Math.min(bMax, bCur + r.finalDamage) : Math.max(0, bCur - r.finalDamage);
+                                  entries.push({ targetId: b.characterId, newHp: bNewHp, amount: r.finalDamage, isHealing: r.isHealing, category: level.damageCategory, element: r.element ?? level.element ?? null });
+                                }
+                              }
+                            }
+                            onApplyAndUse(entries, skill, { variableRepeats, variableColor, variableSpend, chosenPoolEffects: damageChosenPoolEffects });
                           }}
-                          disabled={canAfford === false || _variableAnyBlocked}
-                          className={`text-[10px] px-2 py-1 rounded text-white font-medium ${canAfford === false || _variableAnyBlocked ? "bg-gray-700 text-gray-500 cursor-not-allowed" : result.isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
+                          disabled={canAfford === false || _variableAnyBlocked || !damageAllChosen}
+                          className={`text-[10px] px-2 py-1 rounded text-white font-medium ${canAfford === false || _variableAnyBlocked || !damageAllChosen ? "bg-gray-700 text-gray-500 cursor-not-allowed" : result.isHealing ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"}`}
                         >
-                          {canAfford === false ? "Not Enough Energy" : _variableAnyBlocked ? "Select Energy" : "Apply and Use"}
+                          {canAfford === false ? "Not Enough Energy" : _variableAnyBlocked ? "Select Energy" : !damageAllChosen ? "Pick Effects First" : "Apply and Use"}
                         </button>
                       )}
                     </div>
@@ -5133,8 +5526,48 @@ function SkillModal({
                         Self-damage: {level.hpCost}% max HP
                       </div>
                     )}
+                    {level.splashHit && (() => {
+                      if (isRandomTarget) {
+                        return (
+                          <div className="border-t border-gray-700 pt-1 mt-1">
+                            <span className="text-[9px] text-cyan-300 uppercase font-medium">Splash</span>
+                            <p className="text-[10px] text-gray-400 italic">{level.splashHit.targetPattern === "all-other-enemies" ? "All other enemies" : "Adjacent of target"} — resolved on use</p>
+                          </div>
+                        );
+                      }
+                      const splashEntries = buildSplashEntries(selectedTarget, result);
+                      if (splashEntries.length === 0) {
+                        return (
+                          <div className="border-t border-gray-700 pt-1 mt-1">
+                            <span className="text-[9px] text-cyan-300 uppercase font-medium">Splash</span>
+                            <p className="text-[10px] text-gray-500 italic">No additional targets in range.</p>
+                          </div>
+                        );
+                      }
+                      const total = splashEntries.reduce((s, e) => s + e.amount, 0);
+                      return (
+                        <div className="border-t border-gray-700 pt-1 mt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-cyan-300 uppercase font-medium">Splash ({level.splashHit.targetPattern === "all-other-enemies" ? "all others" : "adjacent"})</span>
+                            <span className="text-[10px] text-gray-500">total -{total}</span>
+                          </div>
+                          <div className="space-y-0.5 mt-0.5">
+                            {splashEntries.map((se) => {
+                              const sc = getCharacterFn!(se.targetId);
+                              return (
+                                <div key={se.targetId} className="flex items-center justify-between text-[10px]">
+                                  <span className="text-gray-300 truncate">{sc?.name ?? "Unknown"}</span>
+                                  <span className="font-bold text-red-400">-{se.amount}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
+                {renderChoosePoolPicker()}
               </div>
             );
           }
@@ -5150,9 +5583,10 @@ function SkillModal({
           const dispels = level?.dispels ?? [];
           const movements = level?.movements ?? [];
           const randomPools = level?.randomEffectPools ?? [];
+          const choosePools = level?.chooseEffectPools ?? [];
           const hasEnergySteal = !!level?.energySteal;
           const hasEnergyGenerate = !!level?.energyGenerate;
-          const hasAnyAction = effects.length > 0 || dispels.length > 0 || movements.length > 0 || hasEnergySteal || hasEnergyGenerate || randomPools.length > 0;
+          const hasAnyAction = effects.length > 0 || dispels.length > 0 || movements.length > 0 || hasEnergySteal || hasEnergyGenerate || randomPools.length > 0 || choosePools.length > 0;
           if (!hasAnyAction) return null;
           // If there's already a damage preview with Apply and Use, don't duplicate
           if (level?.damageCategory) return null;
@@ -5181,6 +5615,44 @@ function SkillModal({
                   </div>
                 </div>
               ))}
+              {choosePools.length > 0 && choosePools.map((pool, pi) => {
+                const selected = poolChoices[pi] ?? [];
+                const remaining = pool.pickCount - selected.length;
+                const toggle = (ei: number) => {
+                  const cur = poolChoices[pi] ?? [];
+                  if (cur.includes(ei)) {
+                    setPoolChoices({ ...poolChoices, [pi]: cur.filter((x) => x !== ei) });
+                  } else if (cur.length < pool.pickCount) {
+                    setPoolChoices({ ...poolChoices, [pi]: [...cur, ei] });
+                  }
+                };
+                return (
+                  <div key={`c-${pi}`}>
+                    <span className="text-[10px] text-emerald-300 uppercase font-medium">
+                      Choose {pool.pickCount} of {pool.effects.length}
+                      {remaining > 0 && <span className="ml-2 text-yellow-400 normal-case">({remaining} more to pick)</span>}
+                    </span>
+                    <div className="space-y-1 mt-1">
+                      {pool.effects.map((eff, ei) => {
+                        const isSel = selected.includes(ei);
+                        return (
+                          <button
+                            key={ei}
+                            onClick={() => toggle(ei)}
+                            className={`w-full text-left rounded px-2 py-1 border transition-colors ${
+                              isSel
+                                ? "bg-emerald-900/30 border-emerald-500/50"
+                                : "bg-gray-800/40 border-gray-700 hover:border-gray-600"
+                            }`}
+                          >
+                            <SkillEffectDisplay effect={eff} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
               {dispels.length > 0 && (
                 <>
                   <span className="text-[10px] text-cyan-400 uppercase font-medium">Dispels</span>
@@ -5210,15 +5682,25 @@ function SkillModal({
                   : null;
                 const isSingleTarget = skillTargeting?.mode === "dropdown" && skillTargeting.targets.length > 0;
                 const selectedTarget = previewTargetId || (isSingleTarget ? skillTargeting!.targets[0]?.characterId : "") || "";
+                // Collect chosen effects from all choose pools
+                const chosenPoolEffects: SkillEffect[] = [];
+                let allChosen = true;
+                choosePools.forEach((pool, pi) => {
+                  const sel = poolChoices[pi] ?? [];
+                  if (sel.length < pool.pickCount) allChosen = false;
+                  sel.forEach((ei) => {
+                    if (pool.effects[ei]) chosenPoolEffects.push(pool.effects[ei]);
+                  });
+                });
                 const handleApply = () => {
+                  if (!allChosen) return;
                   if (isSingleTarget && selectedTarget) {
-                    // Pass a single dummy entry so the effect resolution targets this specific enemy
                     const t = getCharacterFn!(selectedTarget);
                     const maxHp = t?.stats.hp ?? 100;
                     const cur = (currentHpMap ?? {})[selectedTarget] ?? maxHp;
-                    onApplyAndUse([{ targetId: selectedTarget, newHp: cur, amount: 0, isHealing: false }], skill);
+                    onApplyAndUse([{ targetId: selectedTarget, newHp: cur, amount: 0, isHealing: false }], skill, { chosenPoolEffects });
                   } else {
-                    onApplyAndUse([], skill);
+                    onApplyAndUse([], skill, { chosenPoolEffects });
                   }
                 };
                 return (
@@ -5236,10 +5718,10 @@ function SkillModal({
                     )}
                     <button
                       onClick={handleApply}
-                      disabled={canAfford === false}
-                      className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${canAfford === false ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-500"}`}
+                      disabled={canAfford === false || !allChosen}
+                      className={`w-full text-[10px] px-2 py-1.5 rounded text-white font-medium ${canAfford === false || !allChosen ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-500"}`}
                     >
-                      {canAfford === false ? "Not Enough Energy" : "Apply and Use"}
+                      {canAfford === false ? "Not Enough Energy" : !allChosen ? "Pick Effects First" : "Apply and Use"}
                     </button>
                   </>
                 );

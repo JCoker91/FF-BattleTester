@@ -79,6 +79,21 @@
 }
 .animate-self-buff { animation: self-buff 700ms ease-out both; }
 
+/* Active character panel fade-in on turn change */
+@keyframes panel-fade-in {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-panel-in { animation: panel-fade-in 260ms ease-out both; }
+
+/* Battle log entry slide-in from top */
+@keyframes log-slide-in {
+  0%   { opacity: 0; transform: translateY(-8px); max-height: 0; }
+  20%  { opacity: 0; }
+  100% { opacity: 1; transform: translateY(0); max-height: 100px; }
+}
+.animate-log-in { animation: log-slide-in 320ms ease-out both; }
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

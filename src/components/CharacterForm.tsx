@@ -60,6 +60,7 @@ export function CharacterForm({
   );
   const [summary, setSummary] = useState(initial?.summary ?? "");
   const [gender, setGender] = useState<Character["gender"] | "">(initial?.gender ?? "");
+  const [showInBench, setShowInBench] = useState<boolean>(initial?.showInBench !== false);
   const [elemRes, setElemRes] = useState<ElementalValues>(initial?.elementalResistance ?? { ...DEFAULT_ELEMENTAL });
   const [elemDmg, setElemDmg] = useState<ElementalValues>(initial?.elementalDamage ?? { ...DEFAULT_ELEMENTAL });
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(
@@ -119,6 +120,7 @@ export function CharacterForm({
       photoUrl,
       summary: summary || undefined,
       gender: gender || undefined,
+      showInBench,
     });
   };
 
@@ -185,6 +187,18 @@ export function CharacterForm({
           </select>
         </div>
       </div>
+
+      {/* Bench visibility toggle */}
+      <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={showInBench}
+          onChange={(e) => setShowInBench(e.target.checked)}
+          className="w-4 h-4"
+        />
+        Show in battlefield bench
+        <span className="text-xs text-gray-500">(uncheck to hide unfinished characters from staging)</span>
+      </label>
 
       {/* Photo */}
       <div>

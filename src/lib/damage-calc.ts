@@ -16,6 +16,7 @@ interface CombatantStats {
   buffs: BuffDebuff[];
   currentHp?: number; // current HP for HP-based scaling (defaults to max HP if not provided)
   stolenEnergyCount?: number; // total energy stolen by this character so far this battle
+  col?: number; // grid column: 0 = front, 1 = middle, 2 = back
 }
 
 /**
@@ -69,8 +70,23 @@ export function calculateDamage(
     breakdown.push(`Random tier rolled: ${tier}`);
   }
   const tierMult = DAMAGE_MULTIPLIERS[tier] ?? 1.0;
-  const element = skillLevel.element ?? null;
+  let element = skillLevel.element ?? null;
   const isHealing = category === "healing";
+
+  // Imbue override: physical attacks with no element set pick up the attacker's imbue.
+  if (category === "physical" && !element) {
+    for (const b of attacker.buffs) {
+      if (!b.tags) continue;
+      let matched: Element | null = null;
+      for (const t of b.tags) {
+        if (t.type === "fire-imbue") { matched = "fire"; break; }
+        if (t.type === "ice-imbue") { matched = "ice"; break; }
+        if (t.type === "thunder-imbue") { matched = "thunder"; break; }
+      }
+      if (matched) { element = matched; break; }
+    }
+    if (element) breakdown.push(`Imbue: physical attack gains ${element} element.`);
+  }
 
   if (!category) {
     return {
@@ -80,6 +96,7 @@ export function calculateDamage(
       elementalModifier: 0,
       finalDamage: 0,
       isHealing: false,
+      element,
       breakdown: ["No damage category set on this skill level."],
     };
   }
@@ -185,6 +202,16 @@ export function calculateDamage(
       rawDamage = rawDamage + bonusDamage;
       breakdown.push(`Bonus ${skillLevel.bonusHpDamage.percent}% ${skillLevel.bonusHpDamage.source} HP: +${bonusDamage.toFixed(1)} (${hpBase} × ${(skillLevel.bonusHpDamage.percent / 100).toFixed(2)} × ${ratio.toFixed(2)}) — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
     }
+    // Bonus damage when defender has a specific status active
+    if (skillLevel.bonusDamageVsStatus && skillLevel.bonusDamageVsStatus.percent > 0) {
+      const targetStatusId = skillLevel.bonusDamageVsStatus.statusEffectId;
+      const hasStatus = defender.buffs.some((b) => b.effectId === targetStatusId);
+      if (hasStatus) {
+        const before = rawDamage;
+        rawDamage = rawDamage * (1 + skillLevel.bonusDamageVsStatus.percent / 100);
+        breakdown.push(`Bonus vs status: +${skillLevel.bonusDamageVsStatus.percent}% — ${before.toFixed(1)} → ${rawDamage.toFixed(1)}`);
+      }
+    }
     // Stolen energy scaling — bonus damage based on caster's total stolen energy
     if (skillLevel.stolenEnergyScaling && skillLevel.stolenEnergyScaling.perStack > 0) {
       const stolen = attacker.stolenEnergyCount ?? 0;
@@ -261,8 +288,12 @@ export function calculateDamage(
 
   // Source resistance (direct/aoe/indirect) — dmgSrcRes.direct, dmgSrcRes.aoe, dmgSrcRes.indirect
   if (!isHealing && skillLevel.targetType) {
-    const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy"]);
-    const directTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "target-ally", "target-ally-or-self", "random-ally", "adjacent-ally"]);
+    const aoeTypes = new Set([
+      "aoe-enemy", "aoe-team", "self-row-enemy",
+      "all-front-row-enemy", "all-middle-row-enemy", "all-back-row-enemy",
+      "front-two-rows-enemy", "back-two-rows-enemy", "same-line-enemy",
+    ]);
+    const directTypes = new Set(["target-enemy", "front-row-enemy", "random-enemy", "column-pierce-enemy", "target-ally", "target-ally-or-self", "random-ally", "adjacent-ally"]);
     const srcCat = skillLevel.damageSourceOverride
       ? skillLevel.damageSourceOverride
       : aoeTypes.has(skillLevel.targetType) ? "aoe" : directTypes.has(skillLevel.targetType) ? "direct" : "indirect";
@@ -275,6 +306,51 @@ export function calculateDamage(
       const before = finalDamage;
       finalDamage = finalDamage * (1 - reduction);
       breakdown.push(`${srcCat} Res: ${srcModifier > 0 ? "+" : ""}${srcModifier}% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    }
+  }
+
+  // Row positioning modifiers (universal): front +20% dealt/taken, back -20% taken
+  if (!isHealing) {
+    // Caster row: front (col 0) +20% dealt, back (col 2) no global change
+    if (attacker.col === 0) {
+      const before = finalDamage;
+      finalDamage = finalDamage * 1.2;
+      breakdown.push(`Front row attacker: +20% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    }
+    // Melee penalty: back-row caster of a melee skill takes -20% damage dealt
+    if (attacker.col === 2 && skillLevel.rangeTags?.includes("melee")) {
+      const before = finalDamage;
+      finalDamage = finalDamage * 0.8;
+      breakdown.push(`Back row melee penalty: -20% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    }
+    // Defender row: front (col 0) +20% taken, back (col 2) -20% taken
+    if (defender.col === 0) {
+      const before = finalDamage;
+      finalDamage = finalDamage * 1.2;
+      breakdown.push(`Front row defender: +20% taken — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    } else if (defender.col === 2) {
+      const before = finalDamage;
+      finalDamage = finalDamage * 0.8;
+      breakdown.push(`Back row defender: -20% taken — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    }
+  }
+
+  // Healing-received modifier: defender-side buffs/debuffs that scale incoming healing.
+  // Sum all matching tag percents (negatives reduce, positives amplify).
+  if (isHealing) {
+    let healingMod = 0;
+    for (const b of defender.buffs) {
+      if (!b.tags) continue;
+      for (const t of b.tags) {
+        if (t.type !== "healing-received") continue;
+        const p = (t.params.percent as number) ?? 0;
+        healingMod += p * (b.stacks ?? 1);
+      }
+    }
+    if (healingMod !== 0) {
+      const before = finalDamage;
+      finalDamage = Math.max(0, finalDamage * (1 + healingMod / 100));
+      breakdown.push(`Healing received: ${healingMod > 0 ? "+" : ""}${healingMod}% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
     }
   }
 
@@ -293,6 +369,7 @@ export function calculateDamage(
     elementalModifier: Math.round(elementalModifier * 100),
     finalDamage: Math.max(isHealing ? finalDamage : 1, finalDamage), // min 1 damage for attacks
     isHealing,
+    element,
     breakdown,
   };
 }

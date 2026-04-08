@@ -59,7 +59,8 @@ db.exec(`
     character_id TEXT NOT NULL,
     skill_id TEXT NOT NULL,
     form_id TEXT DEFAULT NULL,
-    variant_group_id TEXT DEFAULT NULL
+    variant_group_id TEXT DEFAULT NULL,
+    status_condition_id TEXT DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS skill_templates (
@@ -202,6 +203,32 @@ if (!existingTagNames.has("faster-target-bonus")) {
     JSON.stringify({ percent: { type: "number", label: "Bonus %", default: 10 } }), 16
   );
 }
+// Imbue tags — grant an element to the attacker's physical attacks (when the attack has no element set).
+// Applying any imbue strips other imbues on the same character (mutually exclusive at the system level).
+if (!existingTagNames.has("fire-imbue")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "fire-imbue", "Fire Imbue", "Grants the Fire element to the attacker's physical attacks. Mutually exclusive with other imbues.",
+    JSON.stringify({}), 17
+  );
+}
+if (!existingTagNames.has("ice-imbue")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "ice-imbue", "Ice Imbue", "Grants the Ice element to the attacker's physical attacks. Mutually exclusive with other imbues.",
+    JSON.stringify({}), 18
+  );
+}
+if (!existingTagNames.has("thunder-imbue")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "thunder-imbue", "Thunder Imbue", "Grants the Thunder element to the attacker's physical attacks. Mutually exclusive with other imbues.",
+    JSON.stringify({}), 19
+  );
+}
+if (!existingTagNames.has("healing-received")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "healing-received", "Healing Received", "Modifies incoming healing on the affected character. Negative values reduce healing, positive values amplify it.",
+    JSON.stringify({ percent: { type: "number", label: "Modifier %", default: -30 } }), 20
+  );
+}
 
 // Update existing cover tag to include damageCategory param
 const coverRow = db.prepare("SELECT id, param_schema FROM effect_tag_types WHERE name = 'cover'").get() as { id: string; param_schema: string } | undefined;
@@ -251,6 +278,10 @@ if (!charColumns.some((c) => c.name === "summary")) {
 }
 if (!charColumns.some((c) => c.name === "gender")) {
   db.exec("ALTER TABLE characters ADD COLUMN gender TEXT DEFAULT NULL");
+}
+if (!charColumns.some((c) => c.name === "show_in_bench")) {
+  // default to 1 (visible) so existing characters don't disappear
+  db.exec("ALTER TABLE characters ADD COLUMN show_in_bench INTEGER NOT NULL DEFAULT 1");
 }
 if (!charColumns.some((c) => c.name === "equipped_innate_id")) {
   db.exec("ALTER TABLE characters ADD COLUMN equipped_innate_id TEXT DEFAULT NULL");
@@ -354,6 +385,9 @@ if (!formColumns.some((c) => c.name === "status_resistance_override")) {
 const csColumns = db.prepare("PRAGMA table_info(character_skills)").all() as { name: string }[];
 if (!csColumns.some((c) => c.name === "conditions")) {
   db.exec("ALTER TABLE character_skills ADD COLUMN conditions TEXT DEFAULT NULL");
+}
+if (!csColumns.some((c) => c.name === "status_condition_id")) {
+  db.exec("ALTER TABLE character_skills ADD COLUMN status_condition_id TEXT DEFAULT NULL");
 }
 
 // status_effects migration: rename stat -> stats (JSON array)
@@ -549,6 +583,7 @@ interface CharacterRow {
   elemental_damage: string | null;
   status_resistance: string | null;
   gender: string | null;
+  show_in_bench: number;
 }
 
 function rowToCharacter(row: CharacterRow): Character {
@@ -584,6 +619,7 @@ function rowToCharacter(row: CharacterRow): Character {
     photoUrl: row.photo_url ?? undefined,
     summary: row.summary || undefined,
     gender: (row.gender ?? undefined) as Character["gender"],
+    showInBench: row.show_in_bench !== 0,
   };
 }
 
@@ -601,8 +637,8 @@ export function insertCharacter(data: Omit<Character, "id">): { character: Chara
   const formId = uuid();
   // Create the character
   db.prepare(
-    `INSERT INTO characters (id, name, series, type, energy_generation, stats, photo_url, summary, equipped_loadouts, elemental_resistance, elemental_damage, status_resistance, gender)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO characters (id, name, series, type, energy_generation, stats, photo_url, summary, equipped_loadouts, elemental_resistance, elemental_damage, status_resistance, gender, show_in_bench)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     charId, data.name, data.series, data.type,
     JSON.stringify(data.energyGeneration), JSON.stringify(data.stats),
@@ -611,7 +647,8 @@ export function insertCharacter(data: Omit<Character, "id">): { character: Chara
     JSON.stringify(data.elementalResistance),
     JSON.stringify(data.elementalDamage),
     JSON.stringify(data.statusResistance ?? {}),
-    data.gender ?? null
+    data.gender ?? null,
+    data.showInBench === false ? 0 : 1
   );
   // Create the Base form
   db.prepare("INSERT INTO forms (id, character_id, name, sort_order) VALUES (?, ?, ?, ?)").run(formId, charId, "Base", 0);
@@ -622,7 +659,7 @@ export function insertCharacter(data: Omit<Character, "id">): { character: Chara
 
 export function updateCharacterDb(char: Character): void {
   db.prepare(
-    `UPDATE characters SET name = ?, series = ?, type = ?, energy_generation = ?, stats = ?, photo_url = ?, summary = ?, equipped_loadouts = ?, elemental_resistance = ?, elemental_damage = ?, status_resistance = ?, gender = ?
+    `UPDATE characters SET name = ?, series = ?, type = ?, energy_generation = ?, stats = ?, photo_url = ?, summary = ?, equipped_loadouts = ?, elemental_resistance = ?, elemental_damage = ?, status_resistance = ?, gender = ?, show_in_bench = ?
      WHERE id = ?`
   ).run(
     char.name, char.series, char.type,
@@ -633,6 +670,7 @@ export function updateCharacterDb(char: Character): void {
     JSON.stringify(char.elementalDamage),
     JSON.stringify(char.statusResistance ?? {}),
     char.gender ?? null,
+    char.showInBench === false ? 0 : 1,
     char.id
   );
 }
@@ -891,6 +929,7 @@ interface CharacterSkillRow {
   skill_id: string;
   form_id: string | null;
   variant_group_id: string | null;
+  status_condition_id: string | null;
   conditions: string | null;
 }
 
@@ -901,6 +940,7 @@ function rowToCharacterSkill(row: CharacterSkillRow): CharacterSkill {
     skillId: row.skill_id,
     formId: row.form_id ?? null,
     variantGroupId: row.variant_group_id ?? null,
+    statusConditionId: row.status_condition_id ?? null,
     conditions: row.conditions ? JSON.parse(row.conditions) : undefined,
   };
 }
@@ -915,15 +955,15 @@ export function getCharacterSkillsByCharId(characterId: string): CharacterSkill[
 
 export function insertCharacterSkill(data: Omit<CharacterSkill, "id">): CharacterSkill {
   const id = uuid();
-  db.prepare("INSERT INTO character_skills (id, character_id, skill_id, form_id, variant_group_id, conditions) VALUES (?, ?, ?, ?, ?, ?)").run(
-    id, data.characterId, data.skillId, data.formId ?? null, data.variantGroupId ?? null, data.conditions ? JSON.stringify(data.conditions) : null
+  db.prepare("INSERT INTO character_skills (id, character_id, skill_id, form_id, variant_group_id, status_condition_id, conditions) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    id, data.characterId, data.skillId, data.formId ?? null, data.variantGroupId ?? null, data.statusConditionId ?? null, data.conditions ? JSON.stringify(data.conditions) : null
   );
   return { ...data, id };
 }
 
 export function updateCharacterSkillDb(cs: CharacterSkill): void {
-  db.prepare("UPDATE character_skills SET form_id = ?, variant_group_id = ?, conditions = ? WHERE id = ?").run(
-    cs.formId ?? null, cs.variantGroupId ?? null, cs.conditions ? JSON.stringify(cs.conditions) : null, cs.id
+  db.prepare("UPDATE character_skills SET form_id = ?, variant_group_id = ?, status_condition_id = ?, conditions = ? WHERE id = ?").run(
+    cs.formId ?? null, cs.variantGroupId ?? null, cs.statusConditionId ?? null, cs.conditions ? JSON.stringify(cs.conditions) : null, cs.id
   );
 }
 
