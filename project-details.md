@@ -141,6 +141,34 @@ Rainbow conversion: 2 of any color → 1 rainbow via the conversion modal (click
 
 `variableRepeat` skills: cost is per-repeat, color can be specific or `"any"` (player picks the mix at use time via per-color steppers).
 
+### Leveling system (character level + skill points)
+
+Two independent in-battle progression tracks. Both spend resources during the **End-of-Round Phase** (a modal that opens when the last character of the round acts; the next round only starts when the player clicks "Begin Next Round"). Both are ephemeral battle state — reset on battle start/end, not persisted.
+
+**Track 1 — Character Level (rainbow-gated)**
+- Each character: Lv 0 → Lv 3. Costs **1 / 2 / 3 rainbow** per level (6 total to max).
+- Each level adds **+10% to ATK, MATK, DEF, SPI, SPD**. **HP is intentionally NOT scaled.**
+- State: `characterLevelMap: Record<charId, 0..3>`.
+- Multiplier is applied via the pure helper `applyCharLevelStats(stats, level)` defined at module scope in `battlefield/page.tsx`. It's wrapped around every `aStats`/`dStats` site (the form-merged base stats fed into damage-calc), and `getEffectiveSpeed` multiplies `baseSpd` by the level mult before applying SPD buffs (so turn order recomputes correctly each round).
+- Display panels (`BattleDetailsPanel`, the active character panel) receive `characterLevelMap` / `characterLevel` and apply the helper to `panelStats` so the displayed "base" reflects the leveled value.
+
+**Track 2 — Skill Points (auto-generated)**
+- Each **living** character earns **+1 SP at the end of every round**. Defeated characters earn nothing. Banked per-character.
+- Spend **1 SP** to bring an ability skill from L1→L2, **2 SP** for L2→L3 (helper: `skillUpgradeCost(currentLevel)` → `1 | 2 | null`).
+- Only **ability skills with `leveled !== false`** are upgradeable. Innate, basic, and conditional skills are always at L1. (The runtime `canLevel` check is more permissive for legacy reasons but the leveling UI only offers ability skills.)
+- State: `skillPointsMap: Record<charId, number>`. The existing `skillLevelMap: Record<skillId, 1..3>` is the runtime selector — already wired into every `skill.levels[lvlIdx]` read. Variant-group siblings (e.g. Lightning's Flame/Frost/Spark) auto-sync to the same level when one is upgraded.
+
+**End-of-Round Phase**
+- State: `endOfRoundPhaseOpen: boolean`. When `endRound()` is called, instead of immediately running `advanceToTurn(0, true)`, it ticks the ending character's buffs, awards SP to all living chars, sets the phase open, and waits. `beginNextRound()` clears the phase and runs the actual round transition.
+- Modal lives in `battlefield/page.tsx` as a fixed overlay (z-40, lower than SkillModal at z-50 so the skill detail modal layers on top).
+- Renders both teams as character cards: portrait, char level pips, "Level Up (🌈 X)" button, SP balance, and a per-skill list of equipped levelable abilities with "↑ X SP" buttons.
+- Clicking a skill name in the modal opens `SkillModal` with `levelingMode={true}`, which:
+  - Shows **all 3 levels** stacked instead of just the current one (so the player can compare what their SP would buy)
+  - Highlights the current level (blue "CURRENT" tag) and the next level (yellow "NEXT ↑" tag)
+  - **Hides all "Apply and Use" buttons** — the modal is read-only during leveling
+- The phase modal is the foundation a future **shop feature** will hook into (between-rounds item purchases for additional strategic decisions).
+- The old inline `↑ Upgrade` button on each skill tile in the action bar was removed — the End-of-Round modal is now the only place skills can be upgraded.
+
 ### Battle flow (`battlefield/page.tsx`)
 
 **Phases**: `staging` (drag characters from bench to grid, equip skills) → `battle` (turn order, action, etc.).
@@ -274,8 +302,9 @@ User is configuring these manually in the UI; do not configure them via code.
 ## Where we left off (most recent context)
 
 - Lightning's full kit is designed and the user is configuring her conditional skills (Searing Edge / Glacial Lance / Thunderfall) in the UI
-- Just removed the Next Turn button (Pass replaces it) and added the bench visibility toggle
-- About to start brainstorming Squall but the user requested this handoff doc first
+- **Leveling system shipped** — both character leveling (rainbow → +10% combat stats per level, max Lv 3) and skill points (1 SP/round per living char → upgrade ability skills L1→L2→L3) are live, gated behind the new End-of-Round Phase modal. Clicking a skill in that modal opens SkillModal in `levelingMode` (all 3 levels visible, Apply-and-Use hidden, current/next level highlighted). See "Leveling system" above for details. Needs playtesting to tune SP generation rate (currently 1/round) and rainbow costs.
+- A **shop feature** is on the table as a future addition to the End-of-Round Phase — the modal/phase scaffolding is intentionally built to host it.
+- About to start brainstorming Squall.
 - **Next system to build for Squall**: `row-behind-target` splash pattern. Add to `resolveSplashTargets` in battlefield/page.tsx + `SplashTargetPattern` type in types.ts + SkillForm dropdown option.
 
 ## Quick orientation for a new Claude
