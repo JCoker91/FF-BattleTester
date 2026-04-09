@@ -12,6 +12,9 @@ import {
   MovementType,
   MOVEMENT_TYPES,
   MOVEMENT_TYPE_LABELS,
+  MOVEMENT_TIMINGS,
+  MOVEMENT_TIMING_LABELS,
+  MovementTiming,
   EnergyStealAction,
   EnergyGenerateAction,
   SkillType,
@@ -416,10 +419,12 @@ function MovementsEditor({
   const [targetType, setTargetType] = useState<TargetType>("front-row-enemy");
   const [trigger, setTrigger] = useState<EffectTrigger>("on-use");
   const [destinationSide, setDestinationSide] = useState<"ally" | "enemy">("ally");
+  const [timing, setTiming] = useState<MovementTiming>("after-damage");
 
   const isEditing = editIdx !== null;
   const showForm = adding || isEditing;
   const isTeleport = type === "teleport-self";
+  const isSelfImplicit = type === "teleport-self" || type === "recoil-self-one" || type === "switch-self-adjacent";
 
   const startEdit = (i: number) => {
     const m = movements[i];
@@ -429,6 +434,7 @@ function MovementsEditor({
     setTargetType(m.targetType);
     setTrigger(m.trigger ?? "on-use");
     setDestinationSide(m.destinationSide ?? "ally");
+    setTiming(m.timing ?? "after-damage");
   };
 
   const resetForm = () => {
@@ -438,6 +444,7 @@ function MovementsEditor({
     setTargetType("front-row-enemy");
     setTrigger("on-use");
     setDestinationSide("ally");
+    setTiming("after-damage");
   };
 
   const handleSave = () => {
@@ -446,6 +453,7 @@ function MovementsEditor({
       targetType,
       ...(trigger !== "on-use" ? { trigger } : {}),
       ...(type === "teleport-self" ? { destinationSide } : {}),
+      ...(timing !== "after-damage" ? { timing } : {}),
     };
     if (isEditing && editIdx !== null) {
       onChange(movements.map((m, i) => (i === editIdx ? entry : m)));
@@ -477,7 +485,7 @@ function MovementsEditor({
             return (
               <div key={i} className="flex items-center gap-1.5 text-[11px] bg-gray-800/50 rounded px-2 py-0.5">
                 <span className="text-orange-400">{MOVEMENT_TYPE_LABELS[m.type]}</span>
-                {m.type !== "teleport-self" && (
+                {m.type !== "teleport-self" && m.type !== "recoil-self-one" && m.type !== "switch-self-adjacent" && (
                   <span className="text-gray-500 text-[10px]">{TARGET_TYPE_LABELS[m.targetType]}</span>
                 )}
                 {m.type === "teleport-self" && (
@@ -486,6 +494,7 @@ function MovementsEditor({
                 {m.trigger && m.trigger !== "on-use" && (
                   <span className="text-sky-400 text-[10px]">{EFFECT_TRIGGER_LABELS[m.trigger]}</span>
                 )}
+                <span className="text-purple-400 text-[10px]">{MOVEMENT_TIMING_LABELS[m.timing ?? "after-damage"]}</span>
                 <button onClick={() => startEdit(i)} className="ml-auto text-gray-600 hover:text-blue-400 text-[10px]">edit</button>
                 <button onClick={() => onChange(movements.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 text-[10px]">x</button>
               </div>
@@ -508,7 +517,7 @@ function MovementsEditor({
                 ))}
               </select>
             </label>
-            {!isTeleport && (
+            {!isSelfImplicit && (
               <label className="flex items-center gap-1 text-[10px] text-gray-400">
                 Target:
                 <select
@@ -544,6 +553,18 @@ function MovementsEditor({
               >
                 {filteredTriggers.map((t) => (
                   <option key={t} value={t}>{EFFECT_TRIGGER_LABELS[t]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1 text-[10px] text-gray-400">
+              Timing:
+              <select
+                className="bg-gray-900 border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                value={timing}
+                onChange={(e) => setTiming(e.target.value as MovementTiming)}
+              >
+                {MOVEMENT_TIMINGS.map((t) => (
+                  <option key={t} value={t}>{MOVEMENT_TIMING_LABELS[t]}</option>
                 ))}
               </select>
             </label>

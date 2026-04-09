@@ -101,7 +101,7 @@ export interface DispelAction {
   targetType: TargetType; // who gets dispelled
 }
 
-export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "teleport-self"] as const;
+export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "teleport-self", "recoil-self-one", "switch-self-adjacent"] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
 export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
@@ -109,13 +109,24 @@ export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   "push-back-one": "Push Back 1 Space",
   "pull-forward": "Pull to Front Row",
   "teleport-self": "Teleport Self to Empty Space",
+  "recoil-self-one": "Recoil Self 1 Space Back",
+  "switch-self-adjacent": "Switch Self to Adjacent Space (player picks)",
+};
+
+export const MOVEMENT_TIMINGS = ["before-damage", "after-damage"] as const;
+export type MovementTiming = (typeof MOVEMENT_TIMINGS)[number];
+
+export const MOVEMENT_TIMING_LABELS: Record<MovementTiming, string> = {
+  "before-damage": "Before Damage",
+  "after-damage": "After Damage",
 };
 
 export interface MovementAction {
   type: MovementType;
-  targetType: TargetType; // not used for teleport-self
+  targetType: TargetType; // not used for teleport-self / recoil-self-one / switch-self-adjacent (implicit self)
   trigger?: EffectTrigger; // when this movement fires, defaults to "on-use"
   destinationSide?: "ally" | "enemy"; // for teleport-self: which team's grid to teleport to
+  timing?: MovementTiming; // when during skill resolution this movement fires, defaults to "after-damage". Note: picker-based movements (teleport-self, switch-self-adjacent) always resolve asynchronously via user click regardless of timing.
 }
 
 export interface EnergyStealAction {

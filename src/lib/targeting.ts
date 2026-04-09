@@ -105,9 +105,16 @@ export function resolveTargets(
     }
 
     case "all-front-row-enemy": {
-      // All enemies in the frontmost column (col 0)
-      const frontRow = enemies.filter((e) => e.position.col === 0);
-      return { mode: "aoe", targets: toTargetInfo(frontRow) };
+      // Frontmost living enemy in each lateral lane (mirrors single-target `front-row-enemy`).
+      // A lane with only a mid/back-row enemy still contributes that enemy as its "front".
+      const frontByRow = new Map<number, PlacedUnit>();
+      for (const e of enemies) {
+        const existing = frontByRow.get(e.position.row);
+        if (!existing || e.position.col < existing.position.col) {
+          frontByRow.set(e.position.row, e);
+        }
+      }
+      return { mode: "aoe", targets: toTargetInfo(Array.from(frontByRow.values())) };
     }
 
     case "all-middle-row-enemy": {

@@ -716,6 +716,7 @@ export default function BattlefieldPage() {
   const [convertEnergyModal, setConvertEnergyModal] = useState<{ side: string; color: EnergyColor } | null>(null);
   const [stolenEnergyByChar, setStolenEnergyByChar] = useState<Record<string, number>>({}); // charId → total energy stolen this battle
   const [teleportRequest, setTeleportRequest] = useState<{ charId: string; destSide: string; instant?: boolean } | null>(null);
+  const [adjacentMoveRequest, setAdjacentMoveRequest] = useState<{ charId: string; instant?: boolean } | null>(null);
   // Tracks instant skills used this round: charId -> Set of skillIds
   const [instantUsedMap, setInstantUsedMap] = useState<Record<string, string[]>>({});
   // Floating combat text (damage, heal, status label) per character
@@ -1776,6 +1777,64 @@ export default function BattlefieldPage() {
     return cells;
   }, [teleportRequest, phase, teams]);
 
+  // Adjacent-move mode: 4-directional neighbors of caster on own team's grid.
+  // Allowed cells: empty cells (walk into) + ally-occupied cells (swap with ally).
+  const adjacentMoveCells = useMemo(() => {
+    if (!adjacentMoveRequest || phase !== "battle") return new Set<string>();
+    const casterTeam = teams.find((t) => t.placements.some((p) => p.characterId === adjacentMoveRequest.charId));
+    if (!casterTeam) return new Set<string>();
+    const casterPlacement = casterTeam.placements.find((p) => p.characterId === adjacentMoveRequest.charId);
+    if (!casterPlacement) return new Set<string>();
+    const { row, col } = casterPlacement.position;
+    const neighbors: { r: number; c: number }[] = [
+      { r: row - 1, c: col },
+      { r: row + 1, c: col },
+      { r: row, c: col - 1 },
+      { r: row, c: col + 1 },
+    ];
+    const cells = new Set<string>();
+    for (const n of neighbors) {
+      if (n.r < 0 || n.r > 2 || n.c < 0 || n.c > 2) continue;
+      cells.add(`${casterTeam.side}-${n.r}-${n.c}`);
+    }
+    return cells;
+  }, [adjacentMoveRequest, phase, teams]);
+
+  const handleAdjacentMoveClick = (cellId: string) => {
+    if (!adjacentMoveRequest) return;
+    if (!adjacentMoveCells.has(cellId)) return;
+    const [, rowStr, colStr] = cellId.split("-");
+    const row = parseInt(rowStr);
+    const col = parseInt(colStr);
+    const { charId } = adjacentMoveRequest;
+    const casterTeam = teams.find((t) => t.placements.some((p) => p.characterId === charId));
+    if (!casterTeam) return;
+    const casterPlacement = casterTeam.placements.find((p) => p.characterId === charId);
+    if (!casterPlacement) return;
+    const occupant = casterTeam.placements.find((p) => p.position.row === row && p.position.col === col);
+    let newPlacements: typeof casterTeam.placements;
+    if (occupant && occupant.characterId !== charId) {
+      // Swap with ally
+      newPlacements = casterTeam.placements.map((p) => {
+        if (p.characterId === charId) return { ...p, position: { row, col } };
+        if (p.characterId === occupant.characterId) return { ...p, position: { row: casterPlacement.position.row, col: casterPlacement.position.col } };
+        return p;
+      });
+      addBattleLog(`${getCharacter(charId)?.name ?? "Unknown"} swaps places with ${getCharacter(occupant.characterId)?.name ?? "Unknown"}.`);
+    } else {
+      newPlacements = casterTeam.placements.map((p) =>
+        p.characterId === charId ? { ...p, position: { row, col } } : p
+      );
+      addBattleLog(`${getCharacter(charId)?.name ?? "Unknown"} moves to an adjacent space.`);
+    }
+    updateTeam({ ...casterTeam, placements: newPlacements });
+    const wasInstant = adjacentMoveRequest.instant;
+    setAdjacentMoveRequest(null);
+    if (!wasInstant) {
+      if (isLastTurn) { endRound(); } else { nextTurn(); }
+    }
+  };
+
   const handleTeleportClick = (cellId: string) => {
     if (!teleportRequest) return;
     if (!teleportEmptyCells.has(cellId)) return;
@@ -1903,10 +1962,11 @@ export default function BattlefieldPage() {
                     onHoverCharacter={phase === "battle" ? setHoveredCharId : undefined}
                     animClass={phase === "battle" && getCharAtPos(teams[0], row, col) ? animMap[getCharAtPos(teams[0], row, col)!.id] : undefined}
                     damageFloats={phase === "battle" && getCharAtPos(teams[0], row, col) ? damageFloats.filter((d) => d.charId === getCharAtPos(teams[0], row, col)!.id) : undefined}
-                    switchHighlight={switchAdjacentCells.has(`${teams[0].side}-${row}-${col}`) || teleportEmptyCells.has(`${teams[0].side}-${row}-${col}`)}
+                    switchHighlight={switchAdjacentCells.has(`${teams[0].side}-${row}-${col}`) || teleportEmptyCells.has(`${teams[0].side}-${row}-${col}`) || adjacentMoveCells.has(`${teams[0].side}-${row}-${col}`)}
                     onSwitchClick={() => {
                       const cellId = `${teams[0].side}-${row}-${col}`;
                       if (teleportEmptyCells.has(cellId)) handleTeleportClick(cellId);
+                      else if (adjacentMoveCells.has(cellId)) handleAdjacentMoveClick(cellId);
                       else handleSwitchClick(cellId);
                     }}
                   />
@@ -1947,10 +2007,11 @@ export default function BattlefieldPage() {
                     onHoverCharacter={phase === "battle" ? setHoveredCharId : undefined}
                     animClass={phase === "battle" && getCharAtPos(teams[1], row, col) ? animMap[getCharAtPos(teams[1], row, col)!.id] : undefined}
                     damageFloats={phase === "battle" && getCharAtPos(teams[1], row, col) ? damageFloats.filter((d) => d.charId === getCharAtPos(teams[1], row, col)!.id) : undefined}
-                    switchHighlight={switchAdjacentCells.has(`${teams[1].side}-${row}-${col}`) || teleportEmptyCells.has(`${teams[1].side}-${row}-${col}`)}
+                    switchHighlight={switchAdjacentCells.has(`${teams[1].side}-${row}-${col}`) || teleportEmptyCells.has(`${teams[1].side}-${row}-${col}`) || adjacentMoveCells.has(`${teams[1].side}-${row}-${col}`)}
                     onSwitchClick={() => {
                       const cellId = `${teams[1].side}-${row}-${col}`;
                       if (teleportEmptyCells.has(cellId)) handleTeleportClick(cellId);
+                      else if (adjacentMoveCells.has(cellId)) handleAdjacentMoveClick(cellId);
                       else handleSwitchClick(cellId);
                     }}
                   />
@@ -3568,6 +3629,160 @@ export default function BattlefieldPage() {
               return entry;
             });
 
+            // Define movements application as a timing-aware helper so it can be invoked both
+            // before and after damage resolution. Movements declared in the helper body are read
+            // from the skill level's full movements list and filtered by timing at call time.
+            const movementsAllForPhase = skillUsed.levels[lvlIdx]?.movements ?? [];
+            const applyMovementsTimingPhase = (phaseTiming: "before-damage" | "after-damage") => {
+              if (!activeCharId) return;
+              const movements = movementsAllForPhase.filter((m) => (m.timing ?? "after-damage") === phaseTiming);
+              if (movements.length === 0) return;
+              const enemyTargetTypesM = new Set(["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"]);
+              const allyTargetTypesM = new Set(["target-ally", "target-ally-or-self", "random-ally", "adjacent-ally", "aoe-team"]);
+              const skillTargetType = skillUsed.levels[lvlIdx]?.targetType;
+              const damagedTargetIds = new Set(targetEntries.filter((e) => !e.isHealing && e.amount > 0).map((e) => e.targetId));
+              for (const movement of movements) {
+                const trig = movement.trigger ?? "on-use";
+                if (trig === "on-attack-hit" && damagedTargetIds.size === 0) continue;
+
+                if (movement.type === "recoil-self-one") {
+                  const casterTeam = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId));
+                  if (!casterTeam) continue;
+                  const casterPlacement = casterTeam.placements.find((p) => p.characterId === activeCharId);
+                  if (!casterPlacement) continue;
+                  const { row: cRow, col: cCol } = casterPlacement.position;
+                  if (cCol >= 2) {
+                    addBattleLog(`${getCharacter(activeCharId)?.name ?? "Unknown"} is already at the back row; no recoil.`);
+                    continue;
+                  }
+                  const behindOccupant = casterTeam.placements.find(
+                    (p) => p.position.row === cRow && p.position.col === cCol + 1
+                  );
+                  const newPlacements = casterTeam.placements.map((p) => {
+                    if (p.characterId === activeCharId) return { ...p, position: { row: cRow, col: cCol + 1 } };
+                    if (behindOccupant && p.characterId === behindOccupant.characterId) {
+                      return { ...p, position: { row: cRow, col: cCol } };
+                    }
+                    return p;
+                  });
+                  updateTeam({ ...casterTeam, placements: newPlacements });
+                  addBattleLog(`${getCharacter(activeCharId)?.name ?? "Unknown"} recoils back one space.`);
+                  continue;
+                }
+
+                if (movement.type === "switch-self-adjacent") {
+                  const casterTeam = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId));
+                  if (!casterTeam) continue;
+                  const casterPlacement = casterTeam.placements.find((p) => p.characterId === activeCharId);
+                  if (!casterPlacement) continue;
+                  const { row: cRow, col: cCol } = casterPlacement.position;
+                  const hasNeighbor = [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([dr, dc]) => {
+                    const nr = cRow + dr;
+                    const nc = cCol + dc;
+                    return nr >= 0 && nr <= 2 && nc >= 0 && nc <= 2;
+                  });
+                  if (!hasNeighbor) {
+                    addBattleLog(`${getCharacter(activeCharId)?.name ?? "Unknown"} has no adjacent space to move to!`);
+                    continue;
+                  }
+                  setAdjacentMoveRequest({ charId: activeCharId, instant: !!skillUsed.levels[lvlIdx]?.instant });
+                  pendingTeleport = true;
+                  continue;
+                }
+
+                if (movement.type === "teleport-self") {
+                  const destSide = movement.destinationSide ?? "ally";
+                  const casterTeam = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId));
+                  if (!casterTeam) continue;
+                  const targetTeamForTp = destSide === "ally" ? casterTeam : teams.find((t) => t.id !== casterTeam.id);
+                  if (!targetTeamForTp) continue;
+                  const occupiedSet = new Set(targetTeamForTp.placements.map((p) => `${p.position.row},${p.position.col}`));
+                  let hasEmpty = false;
+                  for (let r = 0; r < 3 && !hasEmpty; r++) {
+                    for (let c = 0; c < 3 && !hasEmpty; c++) {
+                      if (!occupiedSet.has(`${r},${c}`)) hasEmpty = true;
+                    }
+                  }
+                  if (!hasEmpty) {
+                    addBattleLog(`${getCharacter(activeCharId)?.name ?? "Unknown"} has nowhere to teleport to!`);
+                    continue;
+                  }
+                  setTeleportRequest({ charId: activeCharId, destSide, instant: !!skillUsed.levels[lvlIdx]?.instant });
+                  pendingTeleport = true;
+                  continue;
+                }
+
+                let moveTargetIds: string[];
+                const isEnemy = enemyTargetTypesM.has(movement.targetType);
+                const isAlly = allyTargetTypesM.has(movement.targetType);
+                const isSelf = movement.targetType === "self";
+                if (isSelf) {
+                  moveTargetIds = [activeCharId];
+                } else if (isEnemy && targetEntries.length > 0 && skillTargetType && enemyTargetTypesM.has(skillTargetType)) {
+                  moveTargetIds = targetEntries.map((t) => t.targetId);
+                } else if (isAlly && targetEntries.length > 0 && skillTargetType && allyTargetTypesM.has(skillTargetType)) {
+                  moveTargetIds = targetEntries.map((t) => t.targetId);
+                } else {
+                  const mr = resolveTargets(movement.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
+                  moveTargetIds = mr.targets.map((t) => t.characterId);
+                }
+                if (trig === "on-attack-hit") {
+                  moveTargetIds = moveTargetIds.filter((id) => damagedTargetIds.has(id));
+                }
+                for (const tid of moveTargetIds) {
+                  const targetTeam = teams.find((t) => t.placements.some((p) => p.characterId === tid));
+                  if (!targetTeam) continue;
+                  const targetPlacement = targetTeam.placements.find((p) => p.characterId === tid);
+                  if (!targetPlacement) continue;
+                  const { row: targetRow, col: targetCol } = targetPlacement.position;
+                  let newPlacements: typeof targetTeam.placements;
+                  if (movement.type === "push-back") {
+                    if (targetCol >= 2) continue;
+                    newPlacements = targetTeam.placements.map((p) => {
+                      if (p.position.row !== targetRow) return p;
+                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: 2 } };
+                      if (p.position.col > targetCol && p.position.col <= 2) {
+                        return { ...p, position: { row: targetRow, col: p.position.col - 1 } };
+                      }
+                      return p;
+                    });
+                  } else if (movement.type === "push-back-one") {
+                    if (targetCol >= 2) continue;
+                    const behindOccupant = targetTeam.placements.find(
+                      (p) => p.position.row === targetRow && p.position.col === targetCol + 1
+                    );
+                    newPlacements = targetTeam.placements.map((p) => {
+                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: targetCol + 1 } };
+                      if (behindOccupant && p.characterId === behindOccupant.characterId) {
+                        return { ...p, position: { row: targetRow, col: targetCol } };
+                      }
+                      return p;
+                    });
+                  } else if (movement.type === "pull-forward") {
+                    if (targetCol <= 0) continue;
+                    newPlacements = targetTeam.placements.map((p) => {
+                      if (p.position.row !== targetRow) return p;
+                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: 0 } };
+                      if (p.position.col >= 0 && p.position.col < targetCol) {
+                        return { ...p, position: { row: targetRow, col: p.position.col + 1 } };
+                      }
+                      return p;
+                    });
+                  } else {
+                    continue;
+                  }
+                  updateTeam({ ...targetTeam, placements: newPlacements });
+                  const targetName = getCharacter(tid)?.name ?? "Unknown";
+                  const moveLabel =
+                    movement.type === "push-back" ? "pushed to the back row" :
+                    movement.type === "push-back-one" ? "pushed back one space" :
+                    "pulled to the front row";
+                  addBattleLog(`${targetName} is ${moveLabel}.`);
+                }
+              }
+            };
+            applyMovementsTimingPhase("before-damage");
+
             // --- Attack choreography ---
             // Attacker slingshot animation (only for damaging hits with at least one target).
             const attackerSide = activeCharId ? teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side : undefined;
@@ -3729,116 +3944,8 @@ export default function BattlefieldPage() {
               }
             }
 
-            // Apply movements (push/pull/teleport on grid)
-            const movements = skillUsed.levels[lvlIdx]?.movements ?? [];
-            if (movements.length > 0 && activeCharId) {
-              const enemyTargetTypesM = new Set(["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"]);
-              const allyTargetTypesM = new Set(["target-ally", "target-ally-or-self", "random-ally", "adjacent-ally", "aoe-team"]);
-              const skillTargetType = skillUsed.levels[lvlIdx]?.targetType;
-              const damagedTargetIds = new Set(targetEntries.filter((e) => !e.isHealing && e.amount > 0).map((e) => e.targetId));
-              for (const movement of movements) {
-                // Filter by trigger
-                const trig = movement.trigger ?? "on-use";
-                if (trig === "on-attack-hit" && damagedTargetIds.size === 0) continue;
-
-                // Handle teleport-self: prompt the player to choose an empty space
-                if (movement.type === "teleport-self") {
-                  const destSide = movement.destinationSide ?? "ally";
-                  const casterTeam = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId));
-                  if (!casterTeam) continue;
-                  const targetTeamForTp = destSide === "ally" ? casterTeam : teams.find((t) => t.id !== casterTeam.id);
-                  if (!targetTeamForTp) continue;
-                  const occupiedSet = new Set(targetTeamForTp.placements.map((p) => `${p.position.row},${p.position.col}`));
-                  let hasEmpty = false;
-                  for (let r = 0; r < 3 && !hasEmpty; r++) {
-                    for (let c = 0; c < 3 && !hasEmpty; c++) {
-                      if (!occupiedSet.has(`${r},${c}`)) hasEmpty = true;
-                    }
-                  }
-                  if (!hasEmpty) {
-                    addBattleLog(`${getCharacter(activeCharId)?.name ?? "Unknown"} has nowhere to teleport to!`);
-                    continue;
-                  }
-                  setTeleportRequest({ charId: activeCharId, destSide, instant: !!skillUsed.levels[lvlIdx]?.instant });
-                  pendingTeleport = true;
-                  continue;
-                }
-
-                // Resolve movement targets — match damage targets if same group
-                let moveTargetIds: string[];
-                const isEnemy = enemyTargetTypesM.has(movement.targetType);
-                const isAlly = allyTargetTypesM.has(movement.targetType);
-                const isSelf = movement.targetType === "self";
-                if (isSelf) {
-                  moveTargetIds = [activeCharId];
-                } else if (isEnemy && targetEntries.length > 0 && skillTargetType && enemyTargetTypesM.has(skillTargetType)) {
-                  moveTargetIds = targetEntries.map((t) => t.targetId);
-                } else if (isAlly && targetEntries.length > 0 && skillTargetType && allyTargetTypesM.has(skillTargetType)) {
-                  moveTargetIds = targetEntries.map((t) => t.targetId);
-                } else {
-                  const mr = resolveTargets(movement.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
-                  moveTargetIds = mr.targets.map((t) => t.characterId);
-                }
-                // For on-attack-hit movements, only apply to targets that actually took damage
-                if (trig === "on-attack-hit") {
-                  moveTargetIds = moveTargetIds.filter((id) => damagedTargetIds.has(id));
-                }
-                for (const tid of moveTargetIds) {
-                  // Find which team the target is on
-                  const targetTeam = teams.find((t) => t.placements.some((p) => p.characterId === tid));
-                  if (!targetTeam) continue;
-                  const targetPlacement = targetTeam.placements.find((p) => p.characterId === tid);
-                  if (!targetPlacement) continue;
-                  const { row: targetRow, col: targetCol } = targetPlacement.position;
-                  let newPlacements: typeof targetTeam.placements;
-                  if (movement.type === "push-back") {
-                    if (targetCol >= 2) continue;
-                    newPlacements = targetTeam.placements.map((p) => {
-                      if (p.position.row !== targetRow) return p;
-                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: 2 } };
-                      if (p.position.col > targetCol && p.position.col <= 2) {
-                        return { ...p, position: { row: targetRow, col: p.position.col - 1 } };
-                      }
-                      return p;
-                    });
-                  } else if (movement.type === "push-back-one") {
-                    // Move target one column back. If the cell behind is occupied, swap with that
-                    // character (target steps back, occupant steps forward into target's old slot).
-                    // If the cell is empty, target just walks into it. No-op if already at back row.
-                    if (targetCol >= 2) continue;
-                    const behindOccupant = targetTeam.placements.find(
-                      (p) => p.position.row === targetRow && p.position.col === targetCol + 1
-                    );
-                    newPlacements = targetTeam.placements.map((p) => {
-                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: targetCol + 1 } };
-                      if (behindOccupant && p.characterId === behindOccupant.characterId) {
-                        return { ...p, position: { row: targetRow, col: targetCol } };
-                      }
-                      return p;
-                    });
-                  } else if (movement.type === "pull-forward") {
-                    if (targetCol <= 0) continue;
-                    newPlacements = targetTeam.placements.map((p) => {
-                      if (p.position.row !== targetRow) return p;
-                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: 0 } };
-                      if (p.position.col >= 0 && p.position.col < targetCol) {
-                        return { ...p, position: { row: targetRow, col: p.position.col + 1 } };
-                      }
-                      return p;
-                    });
-                  } else {
-                    continue;
-                  }
-                  updateTeam({ ...targetTeam, placements: newPlacements });
-                  const targetName = getCharacter(tid)?.name ?? "Unknown";
-                  const moveLabel =
-                    movement.type === "push-back" ? "pushed to the back row" :
-                    movement.type === "push-back-one" ? "pushed back one space" :
-                    "pulled to the front row";
-                  addBattleLog(`${targetName} is ${moveLabel}.`);
-                }
-              }
-            }
+            // Apply after-damage movements (helper defined above, called before damage earlier).
+            applyMovementsTimingPhase("after-damage");
 
             // Energy steal: random or chosen energy from enemy team
             const energySteal = skillUsed.levels[lvlIdx]?.energySteal;

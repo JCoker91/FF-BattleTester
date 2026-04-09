@@ -247,11 +247,19 @@ Splash patterns (`SplashTargetPattern`):
 
 `column-pierce-enemy` targetType: hits the chosen front-of-lane unit + the **single** unit directly behind it (same lateral row, `col + 1`). It does NOT pierce all the way through the lane — only one cell back. Used by Squall's Solid Barrel.
 
+`front-row-enemy` / `all-front-row-enemy` targetTypes: both use **per-lane frontmost** logic, NOT literal `col === 0`. For each lateral lane, the lowest-col living enemy is considered that lane's "front" — so a lane with only a mid-row or back-row enemy still contributes that enemy as its front. `front-row-enemy` is single-pick (dropdown across the per-lane fronts); `all-front-row-enemy` is AOE across all per-lane fronts. This means a back-row character is NOT safe from front-row AOE if their lane is empty in front of them. Used by Squall's Fire Cross.
+
 `movements`:
 - **`push-back`** — full punt to col=2, shifting other characters in the lane forward
 - **`push-back-one`** — one column step back (col → col+1). Swaps with whoever is directly behind, walks into empty cell otherwise. No-op if already at back row. Used by Squall's Rough Divide.
 - **`pull-forward`** — mirror of push-back toward col=0
 - **`teleport-self`** — caster picks an empty grid cell to move into
+- **`recoil-self-one`** — automatic self-move: caster col → col+1, swap with ally behind or walk into empty cell. No-op at back row. "Cannon recoil" fantasy. Built for Squall's Fire Cross.
+- **`switch-self-adjacent`** — player-picker self-move: opens a picker highlighting the 4-directional neighbors of the caster's current cell on their own team's grid. Empty neighbors = walk into them; ally-occupied neighbors = swap with the ally. Uses `pendingTeleport` flag to defer turn advance until the click resolves (same pattern as `teleport-self`).
+
+**Movement timing**: `MovementAction.timing` is `"before-damage" | "after-damage"` (default `"after-damage"` for backward compat). Set per-movement in the SkillForm movement editor. The movements block in `onApplyAndUse` is extracted into `applyMovementsTimingPhase(phase)`, called once just before the Attack Choreography slingshot and once after the damage-apply block; each call filters to its matching timing. Enables "dash in then strike" (before) and "strike then recoil" (after) patterns on the same primitive.
+
+**Known limitation (movement timing + row bonus)**: row-positioning damage bonuses (front +20% dealt, back-row melee penalty, etc.) are baked into `aStats`/`dStats` *before* movements resolve, so a `before-damage` self-move does NOT recompute attacker row bonus for the current hit. Works positionally/visually, but not for damage scaling. Fix would require re-running the row-bonus layer after the pre-damage movement phase. Punted until a skill actually needs it.
 
 ### FLIP movement transitions
 
@@ -317,7 +325,7 @@ Identity: weak early / strong late chain combatant. Cheap red-cost abilities for
 |---|---|---|---|
 | **1 — Strike** | **Draw Cut** (1🔴) — physical low single, ignoreDefense | **Rough Divide** (2🔴) — physical moderate single + push-back-one | **Lion Heart** (3🔴) — physical severe single, executeBonus, +Lion's Might stack |
 | **2 — Pierce** | **Trigger Shot** (1🔴) — physical low single ranged, ignoreDefense 25% | **Aura Burst** (1🟢) — self-buff Aura (+30% ATK, 2 turns), no damage, NOT instant | **Renzokuken** (1🔴 + variableRepeat red max 3) — physical moderate single, ignoreDefense 40%, `ignoreRowDefense`, multi-hit on locked target, +Lion's Might stack |
-| **3 — Sweep** | **Solid Barrel** (1🔴) — physical low, `column-pierce-enemy` (target front + 1 directly behind) | **Fire Cross** (2🔴) — physical low, `all-front-row-enemy` | **Blasting Zone** (4🔴) — physical high, `front-row-enemy` + splashHit moderate indirect with `row-behind-target` pattern, +Lion's Might stack |
+| **3 — Sweep** | **Solid Barrel** (1🔴) — physical low, `column-pierce-enemy` (target front + 1 directly behind) | **Fire Cross** (2🔴) — physical low, `all-front-row-enemy`, self-move after damage (either `recoil-self-one` auto or `switch-self-adjacent` player-picker — both configured, to playtest) | **Blasting Zone** (4🔴) — physical high, `front-row-enemy` + splashHit moderate indirect with `row-behind-target` pattern, +Lion's Might stack |
 
 **Statuses needed for Squall**:
 - Combo (no stat effect, undispellable, untilNextTurn)
@@ -368,11 +376,13 @@ User is configuring these manually in the UI; do not configure them via code.
 
 ## Where we left off (most recent context)
 
-- **Squall design is locked** — see the Squall section above. Three vertical chains (Strike / Pierce / Sweep), 9 abilities, Combo / Renzoku / Lion's Might statuses. User has configured Draw Cut, Trigger Shot, and Solid Barrel (the three base abilities). Combo-tier and Renzoku-tier abilities + statuses still need to be created in the UI.
+- **Squall design is locked** — see the Squall section above. Three vertical chains (Strike / Pierce / Sweep), 9 abilities, Combo / Renzoku / Lion's Might statuses. User has configured Draw Cut, Trigger Shot, and Solid Barrel (the three base abilities). Combo-tier and Renzoku-tier abilities + statuses still need to be created in the UI. **Currently working on Fire Cross (Sweep / Combo tier)** — both self-move variants (recoil vs picker) supported; user will playtest both before committing.
 - **System primitives built this session for Squall**:
   - `row-behind-target` splash pattern (types.ts + battlefield/page.tsx `resolveSplashTargets` + SkillForm dropdown) — for Blasting Zone
   - `push-back-one` movement type (types.ts + battlefield/page.tsx movement handler) — for Rough Divide
   - `ignoreRowDefense` skill field (types.ts + damage-calc.ts + SkillForm checkbox) — for Renzokuken's anti-back-row sniping
+  - `recoil-self-one` and `switch-self-adjacent` movement types — for Fire Cross (auto cannon-recoil vs player-choice reposition)
+  - `MovementAction.timing` field (`before-damage` / `after-damage`, default after) + `applyMovementsTimingPhase()` helper in `onApplyAndUse` called at both phases + SkillForm timing dropdown. Known limitation: row-bonus damage scaling does not recompute after before-damage moves.
 - **Database snapshot import/export shipped** — `db/snapshot.json` workflow for cross-machine sync. See "Database snapshot" section.
 - **Leveling system playtested but not yet tuned** — character leveling (rainbow → +10% combat stats, max Lv 3) and skill points (1 SP/round per living char). Still uses 1 SP/round; refine after more playtesting.
 - **Bug fixes shipped this session**: defeated chars no longer activate their turn (HP ref pattern), passive turn-start effects fire on round 1 turn 1 (one-shot useEffect), end-of-round modal delays 1.5s for damage floats, defeated chars filtered from all targeting (resolveTargets HP filter), variable-repeat locks target for non-random-enemy skills, column-pierce now hits exactly one cell behind (not the whole lane), action bar locks during the 1.5s end-of-round delay (`roundEnding` flag).

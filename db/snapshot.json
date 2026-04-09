@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-04-09T20:05:56.537Z",
+  "exportedAt": "2026-04-09T23:45:43.007Z",
   "tables": {
     "characters": [
       {
@@ -2050,25 +2050,25 @@
       {
         "id": "ee027ec2-372e-4ae1-b62d-06405427ae9a",
         "name": "Fire Cross",
-        "levels": "[{\"description\":\" - targetType: all-front-row-enemy (sweeps the entire enemy front row — all 3 lateral lanes at     \\n  col=0)     \",\"cost\":[]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Deals **low** [[physical-damage]], [[fire-damage]], [[aoe-damage]] to all front row enemies and pushes the caster back **1** space. Grants [[renzoku-status]] for **1** turn.\",\"cost\":[{\"color\":\"yellow\",\"amount\":1}],\"damageCategory\":\"physical\",\"damageTier\":\"low\",\"element\":\"fire\",\"rangeTags\":[\"ranged\"],\"movements\":[{\"type\":\"recoil-self-one\",\"targetType\":\"front-row-enemy\"}],\"effects\":[{\"effectId\":\"81c177d1-7e9d-4a02-9d53-a15eee27cd8c\",\"targetType\":\"self\",\"modifier\":20,\"duration\":1}],\"targetType\":\"all-front-row-enemy\"},{\"description\":\"Deals **moderate** [[physical-damage]], [[fire-damage]], [[aoe-damage]] to all front row enemies and pushes the caster back **1** space. Grants [[renzoku-status]] for **1** turn.\",\"cost\":[{\"color\":\"yellow\",\"amount\":1}],\"damageCategory\":\"physical\",\"element\":\"fire\",\"targetType\":\"all-front-row-enemy\",\"rangeTags\":[\"ranged\"],\"effects\":[{\"effectId\":\"81c177d1-7e9d-4a02-9d53-a15eee27cd8c\",\"targetType\":\"self\",\"modifier\":20,\"duration\":1}],\"movements\":[{\"type\":\"recoil-self-one\",\"targetType\":\"front-row-enemy\"}]},{\"description\":\"Deals **high** [[physical-damage]], [[fire-damage]], [[aoe-damage]] to all front row enemies and pushes the caster back **1** space. Grants [[renzoku-status]] for **1** turn.\",\"cost\":[{\"color\":\"yellow\",\"amount\":1}],\"damageCategory\":\"physical\",\"element\":\"fire\",\"rangeTags\":[\"ranged\"],\"targetType\":\"all-front-row-enemy\",\"effects\":[{\"effectId\":\"81c177d1-7e9d-4a02-9d53-a15eee27cd8c\",\"targetType\":\"self\",\"modifier\":20,\"duration\":1}],\"movements\":[{\"type\":\"recoil-self-one\",\"targetType\":\"front-row-enemy\"}],\"damageTier\":\"high\"}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
         "variant_group_id": null,
-        "leveled": 0,
-        "description": "",
+        "leveled": 1,
+        "description": "Deals damage and pushes caster back.",
         "template_id": null
       },
       {
         "id": "3a1e190f-510c-4428-864f-661770be3469",
         "name": "Blasting Zone",
-        "levels": "[{\"description\":\" - Physical, high damage\\n  - targetType: front-row-enemy (single front-row pick)\\n  - splashHit: moderate indirect physical, targetPattern: row-behind-target — the new splash pattern\\n   that hits everyone in the depth lane behind the primary\\n  - Grants a stack of Lion's Might\\n  - The signature back-row-piercing finisher: hit a front-line tank, the beam carries through and\\n  cooks the entire row behind them (up to 4 enemies hit total)\",\"cost\":[]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Deals **high** [[fire-damage]], [[physical-damage]], [[direct-damage]] damage to a front row enemy and on hit deals **moderate** [[fire-damage]], [[physical-damage]], [[indirect-damage]] damage to all enemies in the row behind the target. Grants a stack of [[lions-might-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":4}],\"damageCategory\":\"physical\",\"rangeTags\":[\"ranged\"],\"targetType\":\"front-row-enemy\",\"splashHit\":{\"damageTier\":\"moderate\",\"damageCategory\":\"physical\",\"damageSourceOverride\":\"indirect\",\"targetPattern\":\"row-behind-target\",\"inheritElement\":true},\"element\":\"fire\",\"effects\":[{\"effectId\":\"9867f368-414e-4aa8-81e0-82c40cba77ce\",\"targetType\":\"self\",\"modifier\":10,\"duration\":-1}]},{\"description\":\"Deals **severe** [[fire-damage]], [[physical-damage]], [[direct-damage]] damage to a front row enemy and on hit deals **moderate** [[fire-damage]], [[physical-damage]], [[indirect-damage]] damage to all enemies in the row behind the target. Grants a stack of [[lions-might-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":4}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"element\":\"fire\",\"targetType\":\"front-row-enemy\",\"rangeTags\":[\"ranged\"],\"splashHit\":{\"damageTier\":\"moderate\",\"damageCategory\":\"physical\",\"damageSourceOverride\":\"indirect\",\"targetPattern\":\"row-behind-target\",\"inheritElement\":true},\"effects\":[{\"effectId\":\"9867f368-414e-4aa8-81e0-82c40cba77ce\",\"targetType\":\"self\",\"modifier\":10,\"duration\":1}]},{\"description\":\"Deals **severe** [[fire-damage]], [[physical-damage]], [[direct-damage]] damage to a front row enemy and on hit deals **high** [[fire-damage]], [[physical-damage]], [[indirect-damage]] damage to all enemies in the row behind the target. Grants a stack of [[lions-might-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":4}],\"damageCategory\":\"physical\",\"damageTier\":\"severe\",\"element\":\"fire\",\"targetType\":\"front-row-enemy\",\"rangeTags\":[\"ranged\"],\"splashHit\":{\"damageTier\":\"high\",\"damageCategory\":\"physical\",\"damageSourceOverride\":\"indirect\",\"targetPattern\":\"row-behind-target\",\"inheritElement\":true},\"effects\":[{\"effectId\":\"9867f368-414e-4aa8-81e0-82c40cba77ce\",\"targetType\":\"self\",\"modifier\":10,\"duration\":1}]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
         "variant_group_id": null,
-        "leveled": 0,
-        "description": "",
+        "leveled": 1,
+        "description": "Deals damage to an enemy and targets behind.",
         "template_id": null
       }
     ],
@@ -2762,7 +2762,7 @@
         "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
         "skill_id": "5d3d0f7e-39ca-4265-b39b-f6f4a1d0c6e7",
         "form_id": null,
-        "variant_group_id": null,
+        "variant_group_id": "6b99d7c8-e8ed-4833-9bf6-eab6fe679566",
         "conditions": null,
         "status_condition_id": null
       },
@@ -2771,18 +2771,18 @@
         "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
         "skill_id": "ee027ec2-372e-4ae1-b62d-06405427ae9a",
         "form_id": null,
-        "variant_group_id": null,
+        "variant_group_id": "6b99d7c8-e8ed-4833-9bf6-eab6fe679566",
         "conditions": null,
-        "status_condition_id": null
+        "status_condition_id": "217ba8af-1ed5-4867-8aa6-c548206a1907"
       },
       {
         "id": "f046efa2-f508-49cd-a820-4b0af229cc83",
         "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
         "skill_id": "3a1e190f-510c-4428-864f-661770be3469",
         "form_id": null,
-        "variant_group_id": null,
+        "variant_group_id": "6b99d7c8-e8ed-4833-9bf6-eab6fe679566",
         "conditions": null,
-        "status_condition_id": null
+        "status_condition_id": "81c177d1-7e9d-4a02-9d53-a15eee27cd8c"
       }
     ],
     "skill_templates": [
@@ -3506,13 +3506,13 @@
         "id": "team-left",
         "name": "Team A",
         "side": "left",
-        "placements": "[{\"characterId\":\"f18458e1-4483-4a88-94b5-05995a0dcd6a\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"4972d77e-87b0-403c-9d2a-04481075dda6\",\"position\":{\"row\":1,\"col\":1}}]"
+        "placements": "[{\"characterId\":\"f18458e1-4483-4a88-94b5-05995a0dcd6a\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"de1af1db-2d4e-411f-9dab-ca406dc0ad9b\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":1,\"col\":2}}]"
       },
       {
         "id": "team-right",
         "name": "Team B",
         "side": "right",
-        "placements": "[{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":2,\"col\":1}},{\"characterId\":\"de395cae-5f23-4158-aa45-50e6c7ea68a1\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":1,\"col\":2}}]"
+        "placements": "[{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"de395cae-5f23-4158-aa45-50e6c7ea68a1\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4972d77e-87b0-403c-9d2a-04481075dda6\",\"position\":{\"row\":2,\"col\":1}}]"
       }
     ],
     "status_effects": [
