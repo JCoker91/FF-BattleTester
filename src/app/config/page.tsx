@@ -345,6 +345,39 @@ export default function ConfigPage() {
   ];
 
   const [tab, setTab] = useState<"series" | "glossary" | "status-effects">("series");
+  const [snapshotStatus, setSnapshotStatus] = useState<string | null>(null);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+
+  const runExport = async () => {
+    setSnapshotBusy(true);
+    setSnapshotStatus(null);
+    try {
+      const res = await fetch("/api/snapshot", { method: "GET" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? "Export failed");
+      setSnapshotStatus(`Exported ${data.rows} rows across ${data.tables} tables → db/snapshot.json`);
+    } catch (e) {
+      setSnapshotStatus(`Error: ${(e as Error).message}`);
+    } finally {
+      setSnapshotBusy(false);
+    }
+  };
+
+  const runImport = async () => {
+    if (!confirm("Import db/snapshot.json? This will WIPE the current database and replace it with the snapshot contents. Continue?")) return;
+    setSnapshotBusy(true);
+    setSnapshotStatus(null);
+    try {
+      const res = await fetch("/api/snapshot", { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? "Import failed");
+      setSnapshotStatus(`Imported ${data.rowsImported} rows across ${data.tablesImported} tables. Reload the page to see changes.`);
+    } catch (e) {
+      setSnapshotStatus(`Error: ${(e as Error).message}`);
+    } finally {
+      setSnapshotBusy(false);
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -387,6 +420,38 @@ export default function ConfigPage() {
   return (
     <div className="space-y-6 max-w-lg">
       <h1 className="text-2xl font-bold">Config</h1>
+
+      {/* Database snapshot — export current db to db/snapshot.json (commit it),
+          or import from that file (overwrites current db). Battle state is not included. */}
+      <section className="border border-gray-800 rounded-lg p-3 bg-gray-950/40">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <div className="text-sm font-semibold text-white">Database Snapshot</div>
+            <div className="text-[11px] text-gray-500">Sync design data across machines via <code className="text-gray-400">db/snapshot.json</code> in source control.</div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={runExport}
+            disabled={snapshotBusy}
+            className="flex-1 text-xs px-3 py-2 rounded bg-blue-700/40 hover:bg-blue-600/60 border border-blue-500/40 text-blue-100 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ↓ Export to snapshot.json
+          </button>
+          <button
+            onClick={runImport}
+            disabled={snapshotBusy}
+            className="flex-1 text-xs px-3 py-2 rounded bg-yellow-700/40 hover:bg-yellow-600/60 border border-yellow-500/40 text-yellow-100 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ↑ Import from snapshot.json
+          </button>
+        </div>
+        {snapshotStatus && (
+          <div className={`mt-2 text-[11px] ${snapshotStatus.startsWith("Error") ? "text-red-400" : "text-green-400"}`}>
+            {snapshotStatus}
+          </div>
+        )}
+      </section>
 
       <div className="flex gap-1 border-b border-gray-800">
         {TABS.map((t) => (

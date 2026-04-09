@@ -1286,6 +1286,14 @@ export function SkillForm({
                   <span className="text-[10px] text-gray-500">%</span>
                 </div>
               )}
+              <label className="flex items-center gap-1 cursor-pointer" title="Bypass the back-row defender's -20% damage taken modifier (anti-back-row sniping)">
+                <input
+                  type="checkbox"
+                  checked={!!level.ignoreRowDefense}
+                  onChange={(e) => updateLevel(i, { ignoreRowDefense: e.target.checked || undefined })}
+                />
+                <span className="text-[10px] text-gray-500">Ignore Row DEF</span>
+              </label>
               <div className="flex items-center gap-1">
                 <span className="text-[10px] text-red-400">HP Cost:</span>
                 <input
@@ -1477,10 +1485,11 @@ export function SkillForm({
                       <select
                         className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
                         value={level.splashHit.targetPattern}
-                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, targetPattern: e.target.value as "adjacent-of-target" | "all-other-enemies" } })}
+                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, targetPattern: e.target.value as "adjacent-of-target" | "all-other-enemies" | "row-behind-target" } })}
                       >
                         <option value="adjacent-of-target">Adjacent of target</option>
                         <option value="all-other-enemies">All other enemies</option>
+                        <option value="row-behind-target">Row behind target</option>
                       </select>
                       <select
                         className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"

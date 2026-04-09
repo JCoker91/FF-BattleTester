@@ -101,11 +101,12 @@ export interface DispelAction {
   targetType: TargetType; // who gets dispelled
 }
 
-export const MOVEMENT_TYPES = ["push-back", "pull-forward", "teleport-self"] as const;
+export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "teleport-self"] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
 export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   "push-back": "Push to Back Row",
+  "push-back-one": "Push Back 1 Space",
   "pull-forward": "Pull to Front Row",
   "teleport-self": "Teleport Self to Empty Space",
 };
@@ -146,6 +147,7 @@ export interface SkillLevel {
   targetType?: TargetType;
   ignoreDefense?: number; // % of target's DEF to ignore (0-100), physical attacks only
   ignoreSpirit?: number; // % of target's SPI to ignore (0-100), magical attacks only
+  ignoreRowDefense?: boolean; // when true, the defender's back-row -20% taken modifier is bypassed (anti-back-row sniping skills)
   effects?: SkillEffect[]; // buff/debuff applications
   randomEffectPools?: RandomEffectPool[]; // pools of candidate effects, randomly picked at use time
   chooseEffectPools?: RandomEffectPool[]; // pools of candidate effects, player picks at use time
@@ -169,7 +171,8 @@ export interface SkillLevel {
 
 export type SplashTargetPattern =
   | "adjacent-of-target" // 4-directional neighbors of the primary target (same row ±1 col, or same col ±1 row)
-  | "all-other-enemies"; // every enemy on the opposing team except the primary target
+  | "all-other-enemies" // every enemy on the opposing team except the primary target
+  | "row-behind-target"; // every unit in the depth lane immediately behind the primary target (same side, col === primary.col + 1, any lateral row)
 
 export interface SplashHit {
   damageTier: string; // "minor" | "low" | "moderate" | "high" | "severe" | "massive" — uses the same multipliers

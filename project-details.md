@@ -50,6 +50,19 @@ src/
 
 **When in doubt**: `types.ts` defines the schema, `db.ts` persists it, `battlefield/page.tsx` consumes it. Edit in that order if you're adding a field.
 
+### Database snapshot (cross-machine sync)
+
+The user works on two machines and wants design data synced via git instead of copying the SQLite file. There's an export/import system for this:
+
+- **`db.ts`** exports `exportSnapshot()` / `importSnapshot(data)` and `SNAPSHOT_TABLES` (the table list). Export does `SELECT *` per table; import wipes and re-inserts inside a single transaction. Import intersects snapshot columns with the live schema (`PRAGMA table_info`), so old snapshots survive future migrations — missing columns just take the schema's `DEFAULT`.
+- **`src/app/api/snapshot/route.ts`** — `GET` writes to `db/snapshot.json` at repo root and returns row counts. `POST` reads the same file and imports.
+- **`src/app/config/page.tsx`** — small "Database Snapshot" panel above the tabs with Export / Import buttons + status line.
+- The snapshot file lives at **`db/snapshot.json`** (repo root). `/data/` is gitignored (live SQLite db), `/db/` is committed.
+- Battle state (HP, buffs, character levels, SP, etc.) is React state, not in the DB, so it's automatically excluded.
+- To add a new table to the snapshot: append it to `SNAPSHOT_TABLES` in `db.ts`. Done.
+
+Workflow: edit → click Export → `git commit db/snapshot.json` → push → pull on other machine → click Import → reload.
+
 ## Core systems
 
 ### Damage calculation (`src/lib/damage-calc.ts`)
@@ -87,6 +100,7 @@ A `Skill` has a `skillType` (innate / basic / ability / conditional), a `leveled
 - Splash: `splashHit` (secondary damage payload, see SplashHit type)
 - Misc: `dispels`, `movements`, `energySteal`, `energyGenerate`, `variableRepeat`
 - Gates: `requiresAnyStatus`, `consumesCasterImbue`
+- Row sniping: `ignoreRowDefense` (bypasses the defender's back-row -20% taken modifier — built for Squall's Renzokuken)
 - Passive flag: `passive` (while-equipped effects auto-apply)
 - Range tags: `rangeTags` (e.g. `["melee"]` triggers back-row penalty)
 
@@ -193,7 +207,7 @@ Two independent in-battle progression tracks. Both spend resources during the **
    - Effects loop (regular + random pools + chosen pools, filtered by trigger)
    - Status floats + self-buff flash for self-targeted positive effects
    - Dispels
-   - Movements (push-back, pull-forward, teleport-self with player picker)
+   - Movements (`push-back` = full punt to back row, `push-back-one` = single-step shove that swaps with whoever is directly behind, `pull-forward`, `teleport-self` with player picker)
    - Energy steal/generate
    - Counter attacks (defenders with `counter` tag retaliate)
    - Battle log entries
@@ -208,7 +222,7 @@ Used by:
 - **Cecil's forms** (paladin/dark knight) — `formId`-based variants
 - **Lightning's Elemental Strike** → Flamestrike / Froststrike / Sparkstrike — status-condition variants (the imbue tags)
 - **Lightning's Army of One** → Inferno / Glacier / Storm — same pattern
-- **Squall (planned)** — Slash → Breaking Slash → Blasting Zone via chain status
+- **Squall** — three vertical chains (Strike / Pierce / Sweep), each base ability applies **Combo**, each Combo-tier applies **Renzoku**. All 9 abilities live in one variant group keyed by `statusConditionId` (Combo for tier 2, Renzoku for tier 3). Combo and Renzoku are both `dispellable: false` and `untilNextTurn` — counterplay is silence/stun/energy denial, not dispel.
 
 **Important rule**: variant siblings with `statusConditionId` set are hidden from the equip UI. Only the base (no status condition) can be equipped; the variants swap in automatically.
 
@@ -221,6 +235,23 @@ Used by:
 - **Panel fade-in** — active character panel re-mounts on turn change with `key={activeCharId}` and a 260ms fade.
 
 Pass button has a 180ms delay before advancing the turn so the panel transition reads cleanly.
+
+### Combat geometry (coordinate system)
+
+**Important and non-obvious**: in the placement coordinate system, **`col` is the depth axis** (0 = front row, 1 = mid, 2 = back) and **`row` is the lateral axis** (3 lateral lanes). "Front row" in game terms = `col === 0`. "Row behind X" in game terms = `X.col + 1`. The naming is confusing — read code carefully.
+
+Splash patterns (`SplashTargetPattern`):
+- **`adjacent-of-target`** — 4-directional neighbors of the primary on the same side (same row ±1 col, or same col ±1 row).
+- **`all-other-enemies`** — every unit on the primary's side except the primary.
+- **`row-behind-target`** — every unit at `col === primary.col + 1` on the same side, any lateral row. Up to 3 splash targets. No-op if primary is in the back row. Built for Squall's Blasting Zone.
+
+`column-pierce-enemy` targetType: hits the chosen front-of-lane unit + the **single** unit directly behind it (same lateral row, `col + 1`). It does NOT pierce all the way through the lane — only one cell back. Used by Squall's Solid Barrel.
+
+`movements`:
+- **`push-back`** — full punt to col=2, shifting other characters in the lane forward
+- **`push-back-one`** — one column step back (col → col+1). Swaps with whoever is directly behind, walks into empty cell otherwise. No-op if already at back row. Used by Squall's Rough Divide.
+- **`pull-forward`** — mirror of push-back toward col=0
+- **`teleport-self`** — caster picks an empty grid cell to move into
 
 ### FLIP movement transitions
 
@@ -270,6 +301,34 @@ Identity: physical attacker who imbues her weapon with Fire/Ice/Thunder for elem
 - Charged Reflex or similar (dodge-chance tag, 1 turn, dispellable)
 - Fire/Ice/Thunder Resistance Down (single eleRes stat, dispellable, reusable)
 
+### Squall (Buster) — IN PROGRESS
+
+Identity: weak early / strong late chain combatant. Cheap red-cost abilities form three vertical chains; each chain executes through Combo → Renzoku tiers, with Renzoku-tier finishers granting permanent ATK stacks (Lion's Might) that snowball into a late-game threat. Counterplay is exclusively silence, stun, and energy denial — chain statuses and Lion's Might are all undispellable by design.
+
+**Chain statuses** (both `dispellable: false`, `untilNextTurn`):
+- **Combo** — applied by base abilities, gates the Combo-tier variants
+- **Renzoku** — applied by Combo-tier abilities, gates the Renzoku-tier variants
+
+**Lion's Might** — stackable ATK buff, +10% per stack, max 5, **undispellable, permanent**. Granted on every Renzoku-tier cast (the cast itself, not on hit — dodge tags don't deny it). Justification for undispellability: the buff takes ~15 turns of perfect chain execution to max out, so cost asymmetry of "1 dispel wipes it" would gut the late-game identity.
+
+**The 9 abilities** (one variant group, status-condition swaps):
+
+| Slot | Base (no condition) | Combo tier (Combo status) | Renzoku tier (Renzoku status) |
+|---|---|---|---|
+| **1 — Strike** | **Draw Cut** (1🔴) — physical low single, ignoreDefense | **Rough Divide** (2🔴) — physical moderate single + push-back-one | **Lion Heart** (3🔴) — physical severe single, executeBonus, +Lion's Might stack |
+| **2 — Pierce** | **Trigger Shot** (1🔴) — physical low single ranged, ignoreDefense 25% | **Aura Burst** (1🟢) — self-buff Aura (+30% ATK, 2 turns), no damage, NOT instant | **Renzokuken** (1🔴 + variableRepeat red max 3) — physical moderate single, ignoreDefense 40%, `ignoreRowDefense`, multi-hit on locked target, +Lion's Might stack |
+| **3 — Sweep** | **Solid Barrel** (1🔴) — physical low, `column-pierce-enemy` (target front + 1 directly behind) | **Fire Cross** (2🔴) — physical low, `all-front-row-enemy` | **Blasting Zone** (4🔴) — physical high, `front-row-enemy` + splashHit moderate indirect with `row-behind-target` pattern, +Lion's Might stack |
+
+**Statuses needed for Squall**:
+- Combo (no stat effect, undispellable, untilNextTurn)
+- Renzoku (no stat effect, undispellable, untilNextTurn)
+- Lion's Might (atk +10% per stack, max 5, stackable, undispellable, permanent duration)
+- Aura (atk +30%, 2 turns, dispellable — it's a normal buff)
+
+**Junction**: tabled. May come back as an equippable stat-boost ability rather than a defining mechanic.
+
+**Status as of session end**: First two starting abilities configured (Draw Cut, Trigger Shot). Solid Barrel just configured. Combo-tier and Renzoku-tier abilities still need to be created in the UI, plus the status effects above.
+
 User is configuring these manually in the UI; do not configure them via code.
 
 ### Roadmap (after Lightning)
@@ -291,6 +350,14 @@ User is configuring these manually in the UI; do not configure them via code.
 - **The Pass button is the only mid-round turn-advancement.** The "Next Turn" button was removed. End Round button only appears on the last turn.
 - **Bench visibility** — characters with `showInBench: false` are hidden from staging. Used to hide unfinished characters during playtesting.
 
+### Subtle landmines (stuff that has bitten us)
+
+- **`currentHpMap` stale closures**: `processStartOfTurn`, `resolveTargets`, and the variable-repeat loop all read from `currentHpMapRef.current` (a ref kept in sync with state on every render), NOT from the closure-captured `currentHpMap`. This is because `nextTurn()` is often called synchronously after a `setCurrentHpMap()` earlier in the same handler — the closure `currentHpMap` is still the pre-kill version. If you write new battle logic that needs to know "is this character dead RIGHT NOW," use the ref. The component-level `defeatedCharIds` set is updated by a `useEffect` and lags by 1+ renders.
+- **First turn of round 1 needs an explicit `processStartOfTurn` call**: there's a dedicated `useEffect` (gated by `firstTurnFiredRef`) that fires it when `phase === "battle" && round === 1 && currentTurnIndex === 0 && turnOrder.length > 0`. Without it, passive turn-start effects (e.g. Lightning's cycled imbue innate) miss their first activation. `startBattle` does NOT call it directly because state hasn't committed yet.
+- **`roundEnding` flag locks the action bar during the 1.5s end-of-round delay**: `endRound()` flips `roundEnding = true` synchronously, then schedules the modal open via `setTimeout(1500)`. `nextTurn()`, `endRound()`, and `onApplyAndUse()` all early-return if `roundEnding` is true, plus the Pass / End Round buttons are visually disabled. Cleared in `beginNextRound()`. Without this, the last character's player can spam Pass / cast skills during the delay before the modal pops.
+- **Variable-repeat targeting**: random-enemy skills re-roll per hit (Zidane pattern); all other targeting locks onto the original primary target for every repeat (Squall's Renzokuken pattern). The branch is in the variable-repeat loop in `onApplyAndUse` keyed on `_level.targetType !== "random-enemy"`.
+- **`column-pierce-enemy` only hits the cell directly behind**, not the whole lane. The previous implementation pierced through everything in the lane behind the target — that was a bug, fixed during Squall configuration.
+
 ## User preferences (collaboration style)
 
 - The user is the designer and is comfortable with system architecture decisions but wants the assistant to **propose options with tradeoffs**, not just dive in. They make the call, the assistant builds.
@@ -301,11 +368,15 @@ User is configuring these manually in the UI; do not configure them via code.
 
 ## Where we left off (most recent context)
 
-- Lightning's full kit is designed and the user is configuring her conditional skills (Searing Edge / Glacial Lance / Thunderfall) in the UI
-- **Leveling system shipped** — both character leveling (rainbow → +10% combat stats per level, max Lv 3) and skill points (1 SP/round per living char → upgrade ability skills L1→L2→L3) are live, gated behind the new End-of-Round Phase modal. Clicking a skill in that modal opens SkillModal in `levelingMode` (all 3 levels visible, Apply-and-Use hidden, current/next level highlighted). See "Leveling system" above for details. Needs playtesting to tune SP generation rate (currently 1/round) and rainbow costs.
-- A **shop feature** is on the table as a future addition to the End-of-Round Phase — the modal/phase scaffolding is intentionally built to host it.
-- About to start brainstorming Squall.
-- **Next system to build for Squall**: `row-behind-target` splash pattern. Add to `resolveSplashTargets` in battlefield/page.tsx + `SplashTargetPattern` type in types.ts + SkillForm dropdown option.
+- **Squall design is locked** — see the Squall section above. Three vertical chains (Strike / Pierce / Sweep), 9 abilities, Combo / Renzoku / Lion's Might statuses. User has configured Draw Cut, Trigger Shot, and Solid Barrel (the three base abilities). Combo-tier and Renzoku-tier abilities + statuses still need to be created in the UI.
+- **System primitives built this session for Squall**:
+  - `row-behind-target` splash pattern (types.ts + battlefield/page.tsx `resolveSplashTargets` + SkillForm dropdown) — for Blasting Zone
+  - `push-back-one` movement type (types.ts + battlefield/page.tsx movement handler) — for Rough Divide
+  - `ignoreRowDefense` skill field (types.ts + damage-calc.ts + SkillForm checkbox) — for Renzokuken's anti-back-row sniping
+- **Database snapshot import/export shipped** — `db/snapshot.json` workflow for cross-machine sync. See "Database snapshot" section.
+- **Leveling system playtested but not yet tuned** — character leveling (rainbow → +10% combat stats, max Lv 3) and skill points (1 SP/round per living char). Still uses 1 SP/round; refine after more playtesting.
+- **Bug fixes shipped this session**: defeated chars no longer activate their turn (HP ref pattern), passive turn-start effects fire on round 1 turn 1 (one-shot useEffect), end-of-round modal delays 1.5s for damage floats, defeated chars filtered from all targeting (resolveTargets HP filter), variable-repeat locks target for non-random-enemy skills, column-pierce now hits exactly one cell behind (not the whole lane), action bar locks during the 1.5s end-of-round delay (`roundEnding` flag).
+- **Future shop feature** is on the table for the End-of-Round Phase modal — scaffolding is ready.
 
 ## Quick orientation for a new Claude
 

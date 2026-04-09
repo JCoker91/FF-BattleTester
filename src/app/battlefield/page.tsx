@@ -780,6 +780,10 @@ export default function BattlefieldPage() {
   const [characterLevelMap, setCharacterLevelMap] = useState<Record<string, number>>({}); // charId -> char level (0-3)
   const [skillPointsMap, setSkillPointsMap] = useState<Record<string, number>>({}); // charId -> unspent skill points
   const [endOfRoundPhaseOpen, setEndOfRoundPhaseOpen] = useState(false); // shows the leveling/shop modal between rounds
+  // True the moment endRound() is called and stays true through the modal-display delay
+  // and the modal itself. Locks the action bar so the last character can't keep acting
+  // (Pass spam, instant skills, etc.) during the 1.5s window before the modal pops.
+  const [roundEnding, setRoundEnding] = useState(false);
   const [expandedTemplateSkillId, setExpandedTemplateSkillId] = useState<string | null>(null);
   const [selectedTemplateActionId, setSelectedTemplateActionId] = useState<string | null>(null);
   const [templatePreviewTargetId, setTemplatePreviewTargetId] = useState<string>("");
@@ -805,6 +809,14 @@ export default function BattlefieldPage() {
   const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
   const [firedOnceEffects, setFiredOnceEffects] = useState<Set<string>>(new Set()); // "charId:skillId:effectIdx"
   const [defeatedCharIds, setDefeatedCharIds] = useState<Set<string>>(new Set());
+  // Live ref to currentHpMap so functions called from stale closures (e.g. nextTurn invoked
+  // synchronously after a setCurrentHpMap call earlier in the same handler) can still read
+  // the up-to-date HP. Used by processStartOfTurn to skip just-killed characters and by
+  // resolveTargets to filter dead units out of targeting options.
+  const currentHpMapRef = useRef<Record<string, number>>({});
+  currentHpMapRef.current = currentHpMap;
+  // One-shot guard so the first-turn useEffect only fires once per battle entry.
+  const firstTurnFiredRef = useRef(false);
 
   const logIdRef = useRef(0);
   const logGroupRef = useRef(0);
@@ -1281,6 +1293,7 @@ export default function BattlefieldPage() {
     setCharacterLevelMap({});
     setSkillPointsMap({});
     setEndOfRoundPhaseOpen(false);
+    setRoundEnding(false);
     setTeamEnergy(generateTeamEnergy(formMap));
     setBattleLog([]);
     setFiredOnceEffects(new Set());
@@ -1342,6 +1355,7 @@ export default function BattlefieldPage() {
     setCharacterLevelMap({});
     setSkillPointsMap({});
     setEndOfRoundPhaseOpen(false);
+    setRoundEnding(false);
     setTeamEnergy({});
     setHoveredCharId(null);
     setViewedCharId(null);
@@ -1388,8 +1402,9 @@ export default function BattlefieldPage() {
       }
       return changed ? next : prev;
     });
-    // Skip defeated characters entirely
-    if ((currentHpMap[charId] ?? 1) <= 0) {
+    // Skip defeated characters entirely. Read from the live ref so just-killed chars
+    // are detected even when this runs from a stale closure right after the kill.
+    if ((currentHpMapRef.current[charId] ?? 1) <= 0) {
       return true;
     }
     const charBuffs = buffsMap[charId] ?? [];
@@ -1444,7 +1459,7 @@ export default function BattlefieldPage() {
           }
         }
         // Resolve targets
-        const effTargets = resolveTargets(eff.targetType, charId, teams, getCharacter);
+        const effTargets = resolveTargets(eff.targetType, charId, teams, getCharacter, currentHpMapRef.current);
         const targetIds = effTargets.targets.map((t) => t.characterId);
         const resolvedIds = targetIds.length > 0 ? targetIds : [charId];
         const buff: Omit<BuffDebuff, "id"> = {
@@ -1501,7 +1516,7 @@ export default function BattlefieldPage() {
         // whose effect is in the same pool (via effectId match).
         const poolEffectIds = new Set(pool.effects.map((e) => e.effectId));
         // Resolve targets
-        const effTargets = resolveTargets(eff.targetType, charId, teams, getCharacter);
+        const effTargets = resolveTargets(eff.targetType, charId, teams, getCharacter, currentHpMapRef.current);
         const targetIds = effTargets.targets.map((t) => t.characterId);
         const resolvedIds = targetIds.length > 0 ? targetIds : [charId];
         const buff: Omit<BuffDebuff, "id"> = {
@@ -1533,6 +1548,35 @@ export default function BattlefieldPage() {
 
     return skipTurn;
   };
+
+  // Bug fix: startBattle never called processStartOfTurn for the first character of round 1,
+  // so passive turn-start effects (e.g. Lightning's cycled imbue innate) missed their first
+  // activation. This effect runs once per battle entry as soon as the turn order is populated.
+  useEffect(() => {
+    if (phase !== "battle") {
+      firstTurnFiredRef.current = false;
+      return;
+    }
+    if (firstTurnFiredRef.current) return;
+    if (round !== 1 || currentTurnIndex !== 0) return;
+    if (turnOrder.length === 0) return;
+    const firstCharId = turnOrder[0]?.characterId;
+    if (!firstCharId) return;
+    firstTurnFiredRef.current = true;
+    const shouldSkip = processStartOfTurn(firstCharId);
+    if (shouldSkip) {
+      tickBuffsForCharacter(firstCharId);
+      // Defer the skip-advance so React commits the current render first.
+      setTimeout(() => {
+        if (turnOrder.length <= 1) {
+          advanceToTurn(0, true);
+        } else {
+          advanceToTurn(1);
+        }
+      }, 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, round, currentTurnIndex, turnOrder]);
 
   const advanceToTurn = (nextIdx: number, nextRound?: boolean) => {
     if (nextRound) {
@@ -1596,6 +1640,7 @@ export default function BattlefieldPage() {
   };
 
   const nextTurn = () => {
+    if (roundEnding) return; // input locked while round transition is in flight
     // Tick buffs for the character whose turn just ended
     const endingCharId = turnOrder[currentTurnIndex]?.characterId;
     if (endingCharId) tickBuffsForCharacter(endingCharId);
@@ -1603,6 +1648,8 @@ export default function BattlefieldPage() {
   };
 
   const endRound = () => {
+    if (roundEnding) return; // already in transition; ignore re-entry from spam clicks
+    setRoundEnding(true);
     // Tick buffs for the last character whose turn just ended
     const endingCharId = turnOrder[currentTurnIndex]?.characterId;
     if (endingCharId) tickBuffsForCharacter(endingCharId);
@@ -1620,11 +1667,16 @@ export default function BattlefieldPage() {
     });
     // Open the end-of-round phase modal. The next round only starts
     // when the player clicks "Begin Next Round" inside the modal.
-    setEndOfRoundPhaseOpen(true);
+    // Delay so damage floats / animations from the final action of the round
+    // have time to play before the modal covers the battlefield.
+    setTimeout(() => {
+      setEndOfRoundPhaseOpen(true);
+    }, 1500);
   };
 
   const beginNextRound = () => {
     setEndOfRoundPhaseOpen(false);
+    setRoundEnding(false);
     advanceToTurn(0, true);
   };
 
@@ -1990,7 +2042,8 @@ export default function BattlefieldPage() {
             {isLastTurn && (
               <button
                 onClick={endRound}
-                className="text-xs px-4 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white font-medium"
+                disabled={roundEnding}
+                className={`text-xs px-4 py-1.5 rounded text-white font-medium ${roundEnding ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-yellow-600 hover:bg-yellow-500"}`}
               >
                 End Round
               </button>
@@ -2383,13 +2436,15 @@ export default function BattlefieldPage() {
                           })()}
                           <button
                             onClick={() => {
+                              if (roundEnding) return;
                               addBattleLog(`Round ${round}. ${aChar.name} passes their turn.`);
                               // Small delay so the pass feels deliberate and the panel fade-in reads cleanly
                               setTimeout(() => {
                                 if (isLastTurn) { endRound(); } else { nextTurn(); }
                               }, 180);
                             }}
-                            className="w-24 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded text-center transition-colors"
+                            disabled={roundEnding}
+                            className={`w-24 border rounded text-center transition-colors ${roundEnding ? "bg-gray-900 border-gray-800 opacity-40 cursor-not-allowed" : "bg-gray-800 hover:bg-gray-700 border-gray-700"}`}
                           >
                             <span className="text-[10px] text-gray-400 font-medium">Pass</span>
                           </button>
@@ -2608,7 +2663,7 @@ export default function BattlefieldPage() {
                                         else if (entries.length > 0 && ((enemyTT.has(d.targetType) && enemyTT.has(selLevel.targetType ?? "")) || (allyTT.has(d.targetType) && allyTT.has(selLevel.targetType ?? "")))) {
                                           dTargetIds = entries.map((e) => e.targetId);
                                         } else {
-                                          const dr = resolveTargets(d.targetType, activeCharId, teams, getCharacter);
+                                          const dr = resolveTargets(d.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
                                           dTargetIds = dr.targets.map((t) => t.characterId);
                                         }
                                         for (const tid of dTargetIds) {
@@ -2650,7 +2705,7 @@ export default function BattlefieldPage() {
                                         else if (entries.length > 0 && ((enemyTT2.has(eff.targetType) && enemyTT2.has(selLevel.targetType ?? "")) || (allyTT2.has(eff.targetType) && allyTT2.has(selLevel.targetType ?? "")))) {
                                           effTargetIds = entries.map((e) => e.targetId);
                                         } else {
-                                          const er = resolveTargets(eff.targetType, activeCharId, teams, getCharacter);
+                                          const er = resolveTargets(eff.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
                                           effTargetIds = er.targets.map((t) => t.characterId);
                                         }
                                         const buff: Omit<BuffDebuff, "id"> = {
@@ -3280,6 +3335,7 @@ export default function BattlefieldPage() {
             setCurrentHpMap((prev) => ({ ...prev, [targetId]: newHp }));
           } : undefined}
           onApplyAndUse={phase === "battle" ? (rawTargetEntries, skillUsed, opts) => {
+            if (roundEnding) return; // input locked while round transition is in flight
             let pendingTeleport = false;
             // Variable-repeat expansion: if the skill is configured with a variableRepeat,
             // generate additional damage entries by re-resolving random-enemy targets per hit.
@@ -3304,14 +3360,27 @@ export default function BattlefieldPage() {
                 const runningHp: Record<string, number> = {};
                 for (const e of rawTargetEntries) runningHp[e.targetId] = e.newHp;
                 const extras: typeof rawTargetEntries = [];
+                // For random-enemy targeting we re-roll a fresh target per hit (Zidane's
+                // pattern). For any other targeting (target-enemy, front-row-enemy, etc.)
+                // every repeat hits the SAME primary target — the player committed to a
+                // single target up front (Squall's Renzokuken pattern). If that target
+                // dies mid-combo, the remaining hits fizzle.
+                const lockedTargetId = _level.targetType !== "random-enemy" ? rawTargetEntries[0]?.targetId : null;
                 for (let i = 1; i < vCount; i++) {
-                  const res = resolveTargets(_level.targetType, activeCharId, teams, getCharacter);
-                  const pool = res.targets.filter((t) => {
-                    const hp = runningHp[t.characterId] ?? currentHpMap[t.characterId] ?? getCharacter(t.characterId)?.stats.hp ?? 0;
-                    return hp > 0;
-                  });
-                  if (pool.length === 0) break;
-                  const pick = pool[Math.floor(Math.random() * pool.length)];
+                  let pick: { characterId: string } | undefined;
+                  if (lockedTargetId) {
+                    if ((runningHp[lockedTargetId] ?? 1) <= 0) break;
+                    pick = { characterId: lockedTargetId };
+                  } else {
+                    const res = resolveTargets(_level.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
+                    const pool = res.targets.filter((t) => {
+                      const hp = runningHp[t.characterId] ?? currentHpMap[t.characterId] ?? getCharacter(t.characterId)?.stats.hp ?? 0;
+                      return hp > 0;
+                    });
+                    if (pool.length === 0) break;
+                    pick = pool[Math.floor(Math.random() * pool.length)];
+                  }
+                  if (!pick) break;
                   const tChar = getCharacter(pick.characterId);
                   if (!tChar) continue;
                   const dFormId = battleFormMap[pick.characterId];
@@ -3628,7 +3697,7 @@ export default function BattlefieldPage() {
                 } else if (isAlly && targetEntries.length > 0 && skillTargetType && allyTargetTypes.has(skillTargetType)) {
                   dispelTargetIds = targetEntries.map((t) => t.targetId);
                 } else {
-                  const dispelTargets = resolveTargets(dispel.targetType, activeCharId, teams, getCharacter);
+                  const dispelTargets = resolveTargets(dispel.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
                   dispelTargetIds = dispelTargets.targets.map((t) => t.characterId);
                 }
                 for (const tid of dispelTargetIds) {
@@ -3707,7 +3776,7 @@ export default function BattlefieldPage() {
                 } else if (isAlly && targetEntries.length > 0 && skillTargetType && allyTargetTypesM.has(skillTargetType)) {
                   moveTargetIds = targetEntries.map((t) => t.targetId);
                 } else {
-                  const mr = resolveTargets(movement.targetType, activeCharId, teams, getCharacter);
+                  const mr = resolveTargets(movement.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
                   moveTargetIds = mr.targets.map((t) => t.characterId);
                 }
                 // For on-attack-hit movements, only apply to targets that actually took damage
@@ -3732,6 +3801,21 @@ export default function BattlefieldPage() {
                       }
                       return p;
                     });
+                  } else if (movement.type === "push-back-one") {
+                    // Move target one column back. If the cell behind is occupied, swap with that
+                    // character (target steps back, occupant steps forward into target's old slot).
+                    // If the cell is empty, target just walks into it. No-op if already at back row.
+                    if (targetCol >= 2) continue;
+                    const behindOccupant = targetTeam.placements.find(
+                      (p) => p.position.row === targetRow && p.position.col === targetCol + 1
+                    );
+                    newPlacements = targetTeam.placements.map((p) => {
+                      if (p.characterId === tid) return { ...p, position: { row: targetRow, col: targetCol + 1 } };
+                      if (behindOccupant && p.characterId === behindOccupant.characterId) {
+                        return { ...p, position: { row: targetRow, col: targetCol } };
+                      }
+                      return p;
+                    });
                   } else if (movement.type === "pull-forward") {
                     if (targetCol <= 0) continue;
                     newPlacements = targetTeam.placements.map((p) => {
@@ -3747,7 +3831,10 @@ export default function BattlefieldPage() {
                   }
                   updateTeam({ ...targetTeam, placements: newPlacements });
                   const targetName = getCharacter(tid)?.name ?? "Unknown";
-                  const moveLabel = movement.type === "push-back" ? "pushed to the back row" : "pulled to the front row";
+                  const moveLabel =
+                    movement.type === "push-back" ? "pushed to the back row" :
+                    movement.type === "push-back-one" ? "pushed back one space" :
+                    "pulled to the front row";
                   addBattleLog(`${targetName} is ${moveLabel}.`);
                 }
               }
@@ -3896,7 +3983,7 @@ export default function BattlefieldPage() {
                 } else if (effIsAlly && redirectedEntries.length > 0 && skillTargetType && allyTargetTypes.has(skillTargetType)) {
                   resolvedIds = redirectedEntries.filter((t) => !t.isSplash).map((t) => t.targetId);
                 } else {
-                  const effTargets = resolveTargets(eff.targetType, activeCharId, teams, getCharacter);
+                  const effTargets = resolveTargets(eff.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
                   resolvedIds = effTargets.targets.map((t) => t.characterId);
                 }
                 const buff: Omit<BuffDebuff, "id"> = {
@@ -5360,7 +5447,7 @@ function SkillModal({
                   onChange={(e) => setVariableRepeats(Math.max(1, Math.min(vr.max, parseInt(e.target.value) || 1)))}
                   className="w-full"
                 />
-                <p className="text-[10px] text-gray-500">Each additional hit costs 1 {vr.color} energy and re-rolls a random enemy.</p>
+                <p className="text-[10px] text-gray-500">Each additional hit costs 1 {vr.color} energy and {skill.levels[effLv]?.targetType === "random-enemy" ? "re-rolls a random enemy" : "hits the same target"}.</p>
               </div>
             );
           }
@@ -5397,7 +5484,7 @@ function SkillModal({
                   );
                 })}
               </div>
-              <p className="text-[10px] text-gray-500">Select which energies to spend. Each energy = 1 hit (re-rolls a random enemy).</p>
+              <p className="text-[10px] text-gray-500">Select which energies to spend. Each energy = 1 hit ({skill.levels[effLv]?.targetType === "random-enemy" ? "re-rolls a random enemy" : "hits the same target"}).</p>
             </div>
           );
         })()}
@@ -5408,7 +5495,7 @@ function SkillModal({
           const level = skill.levels[effectiveLevel];
           if (!level?.damageCategory) return null;
 
-          const rawTargeting = resolveTargets(level.targetType, attackerChar.id, modalTeams, getCharacterFn);
+          const rawTargeting = resolveTargets(level.targetType, attackerChar.id, modalTeams, getCharacterFn, currentHpMap);
           // Apply force-target override
           const attackCategory = getAttackCategory(level.targetType, level.damageSourceOverride);
           const attackerBuffs = buffsMap?.[attackerChar.id] ?? [];
@@ -5524,13 +5611,26 @@ function SkillModal({
           const resolveSplashTargets = (primaryId: string): string[] => {
             const splash = level.splashHit;
             if (!splash || !modalTeams) return [];
-            const allUnits = modalTeams.flatMap((t) => t.placements.map((p) => ({ charId: p.characterId, side: t.side, row: p.position.row, col: p.position.col })));
+            // Exclude defeated units from splash target resolution.
+            const allUnits = modalTeams
+              .flatMap((t) => t.placements.map((p) => ({ charId: p.characterId, side: t.side, row: p.position.row, col: p.position.col })))
+              .filter((u) => ((currentHpMap?.[u.charId]) ?? 1) > 0);
             const primary = allUnits.find((u) => u.charId === primaryId);
             if (!primary) return [];
             if (splash.targetPattern === "all-other-enemies") {
               // Splash hits everyone on the same side as the primary target (i.e. the rest of the enemy team)
               return allUnits
                 .filter((u) => u.side === primary.side && u.charId !== primaryId)
+                .map((u) => u.charId);
+            }
+            if (splash.targetPattern === "row-behind-target") {
+              // Splash hits every unit in the depth lane immediately behind the primary target.
+              // col is the depth axis (0 = front, 1 = mid, 2 = back); "behind" = primary.col + 1.
+              // Lateral row is unconstrained — up to 3 splash targets, no chaining further back.
+              const behindCol = primary.col + 1;
+              if (behindCol > 2) return [];
+              return allUnits
+                .filter((u) => u.side === primary.side && u.col === behindCol)
                 .map((u) => u.charId);
             }
             // adjacent-of-target: 4-directional neighbors on the same side as the primary target
@@ -5724,9 +5824,16 @@ function SkillModal({
                             if (level.targetType === "column-pierce-enemy" && modalTeams) {
                               const chosenPos = modalTeams.flatMap((tm) => tm.placements.map((p) => ({ ...p, side: tm.side }))).find((p) => p.characterId === chosenId);
                               if (chosenPos) {
+                                // Pierce hits exactly one unit directly behind the target (col + 1
+                                // in the same lateral row), not every unit in the lane behind it.
                                 const behind = modalTeams
                                   .flatMap((tm) => tm.placements.map((p) => ({ ...p, side: tm.side })))
-                                  .filter((p) => p.side === chosenPos.side && p.position.row === chosenPos.position.row && p.position.col > chosenPos.position.col);
+                                  .filter((p) =>
+                                    p.side === chosenPos.side &&
+                                    p.position.row === chosenPos.position.row &&
+                                    p.position.col === chosenPos.position.col + 1 &&
+                                    ((currentHpMap?.[p.characterId]) ?? 1) > 0
+                                  );
                                 for (const b of behind) {
                                   const r = calcForTarget(b.characterId);
                                   if (!r) continue;
@@ -5780,7 +5887,7 @@ function SkillModal({
                         return (
                           <div className="border-t border-gray-700 pt-1 mt-1">
                             <span className="text-[9px] text-cyan-300 uppercase font-medium">Splash</span>
-                            <p className="text-[10px] text-gray-400 italic">{level.splashHit.targetPattern === "all-other-enemies" ? "All other enemies" : "Adjacent of target"} — resolved on use</p>
+                            <p className="text-[10px] text-gray-400 italic">{level.splashHit.targetPattern === "all-other-enemies" ? "All other enemies" : level.splashHit.targetPattern === "row-behind-target" ? "Row behind target" : "Adjacent of target"} — resolved on use</p>
                           </div>
                         );
                       }
@@ -5797,7 +5904,7 @@ function SkillModal({
                       return (
                         <div className="border-t border-gray-700 pt-1 mt-1">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] text-cyan-300 uppercase font-medium">Splash ({level.splashHit.targetPattern === "all-other-enemies" ? "all others" : "adjacent"})</span>
+                            <span className="text-[9px] text-cyan-300 uppercase font-medium">Splash ({level.splashHit.targetPattern === "all-other-enemies" ? "all others" : level.splashHit.targetPattern === "row-behind-target" ? "row behind" : "adjacent"})</span>
                             <span className="text-[10px] text-gray-500">total -{total}</span>
                           </div>
                           <div className="space-y-0.5 mt-0.5">
@@ -5927,7 +6034,7 @@ function SkillModal({
               {skill.skillType !== "innate" && (() => {
                 // For single-target non-damage skills, show a target picker
                 const skillTargeting = level?.targetType
-                  ? resolveTargets(level.targetType, attackerChar.id, modalTeams, getCharacterFn)
+                  ? resolveTargets(level.targetType, attackerChar.id, modalTeams, getCharacterFn, currentHpMap)
                   : null;
                 const isSingleTarget = skillTargeting?.mode === "dropdown" && skillTargeting.targets.length > 0;
                 const selectedTarget = previewTargetId || (isSingleTarget ? skillTargeting!.targets[0]?.characterId : "") || "";

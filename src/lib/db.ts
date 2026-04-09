@@ -1081,3 +1081,73 @@ export function getAllEffectTagTypes(): EffectTagType[] {
 export function deleteStatusEffectDb(id: string): void {
   db.prepare("DELETE FROM status_effects WHERE id = ?").run(id);
 }
+
+// --- Snapshot import / export ---
+//
+// Dumps every design-data table to a single JSON document and restores from one.
+// The format is a raw row dump (no field translation), keyed by table name.
+// New columns added later: export picks them up automatically. Import only writes
+// columns the running schema knows about, so reading an older snapshot still works
+// (missing columns get the schema's DEFAULT). Battle state is in-memory only and
+// is not part of the snapshot.
+
+const SNAPSHOT_TABLES = [
+  "characters",
+  "forms",
+  "skills",
+  "character_skills",
+  "skill_templates",
+  "template_actions",
+  "series",
+  "glossary",
+  "teams",
+  "status_effects",
+  "effect_tag_types",
+] as const;
+
+export const SNAPSHOT_VERSION = 1;
+
+export interface DbSnapshot {
+  version: number;
+  exportedAt: string;
+  tables: Record<string, Record<string, unknown>[]>;
+}
+
+export function exportSnapshot(): DbSnapshot {
+  const tables: Record<string, Record<string, unknown>[]> = {};
+  for (const t of SNAPSHOT_TABLES) {
+    tables[t] = db.prepare(`SELECT * FROM ${t}`).all() as Record<string, unknown>[];
+  }
+  return { version: SNAPSHOT_VERSION, exportedAt: new Date().toISOString(), tables };
+}
+
+export function importSnapshot(snapshot: DbSnapshot): { tablesImported: number; rowsImported: number } {
+  if (!snapshot || typeof snapshot !== "object" || !snapshot.tables) {
+    throw new Error("Invalid snapshot: missing tables.");
+  }
+  let tablesImported = 0;
+  let rowsImported = 0;
+  const run = db.transaction(() => {
+    // Delete in reverse order so dependents are cleared first (defensive — no FKs declared, but cheap insurance).
+    for (const t of [...SNAPSHOT_TABLES].reverse()) {
+      db.prepare(`DELETE FROM ${t}`).run();
+    }
+    for (const t of SNAPSHOT_TABLES) {
+      const rows = snapshot.tables[t] ?? [];
+      if (rows.length === 0) continue;
+      // Intersect snapshot columns with the live schema so unknown columns are dropped silently.
+      const liveCols = new Set((db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((r) => r.name));
+      const cols = Object.keys(rows[0]).filter((c) => liveCols.has(c));
+      if (cols.length === 0) continue;
+      const placeholders = cols.map(() => "?").join(", ");
+      const stmt = db.prepare(`INSERT INTO ${t} (${cols.join(", ")}) VALUES (${placeholders})`);
+      for (const r of rows) {
+        stmt.run(...cols.map((c) => (r[c] === undefined ? null : r[c])));
+        rowsImported++;
+      }
+      tablesImported++;
+    }
+  });
+  run();
+  return { tablesImported, rowsImported };
+}

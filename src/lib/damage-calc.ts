@@ -328,10 +328,12 @@ export function calculateDamage(
       const before = finalDamage;
       finalDamage = finalDamage * 1.2;
       breakdown.push(`Front row defender: +20% taken — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
-    } else if (defender.col === 2) {
+    } else if (defender.col === 2 && !skillLevel.ignoreRowDefense) {
       const before = finalDamage;
       finalDamage = finalDamage * 0.8;
       breakdown.push(`Back row defender: -20% taken — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
+    } else if (defender.col === 2 && skillLevel.ignoreRowDefense) {
+      breakdown.push(`Back row defender: -20% bypassed (ignoreRowDefense)`);
     }
   }
 

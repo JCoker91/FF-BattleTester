@@ -21,21 +21,37 @@ export interface TargetResolution {
 
 /**
  * Resolve valid targets for a skill based on its targetType.
+ *
+ * Optional `currentHpMap` filters out any unit at <= 0 HP. When provided, defeated
+ * characters are excluded from every target resolution — this means a "front row enemy"
+ * skill will skip past dead front-row units and target the next living unit in that lane,
+ * AOE patterns won't pretend to hit corpses, and so on. The caster is never excluded by
+ * this filter (a defeated caster shouldn't be acting in the first place).
  */
 export function resolveTargets(
   targetType: TargetType | undefined,
   casterId: string,
   teams: Team[],
-  getCharacter: (id: string) => Character | undefined
+  getCharacter: (id: string) => Character | undefined,
+  currentHpMap?: Record<string, number>
 ): TargetResolution {
   if (!targetType || targetType === "no-target") {
     return { mode: "none", targets: [] };
   }
 
-  // Build placed units list
+  const isAlive = (id: string): boolean => {
+    if (!currentHpMap) return true;
+    if (id === casterId) return true;
+    const hp = currentHpMap[id];
+    if (hp === undefined) return true;
+    return hp > 0;
+  };
+
+  // Build placed units list (defeated units excluded when currentHpMap is provided)
   const placed: PlacedUnit[] = [];
   for (const team of teams) {
     for (const p of team.placements) {
+      if (!isAlive(p.characterId)) continue;
       placed.push({ characterId: p.characterId, side: team.side as "left" | "right", position: p.position });
     }
   }
