@@ -526,6 +526,38 @@ function EnergyPool({
 
 type BattlePhase = "staging" | "battle";
 
+// Character leveling: each level adds +10% to ATK / MATK / DEF / SPI / SPD (NOT HP).
+// Pure helper so child components can use it without re-implementing.
+function applyCharLevelStats<T extends { atk: number; mAtk: number; def: number; spi: number; spd: number }>(
+  stats: T,
+  level: number
+): T {
+  if (!level || level <= 0) return stats;
+  const m = 1 + 0.1 * level;
+  return {
+    ...stats,
+    atk: Math.round(stats.atk * m),
+    mAtk: Math.round(stats.mAtk * m),
+    def: Math.round(stats.def * m),
+    spi: Math.round(stats.spi * m),
+    spd: Math.round(stats.spd * m),
+  };
+}
+
+// Skill point cost to bring an ability skill from current level to next level.
+// L1 -> L2 = 1 SP, L2 -> L3 = 2 SP. Returns null if at max.
+function skillUpgradeCost(currentLevel: number): number | null {
+  if (currentLevel >= 3) return null;
+  return currentLevel; // 1 -> 2 = 1 SP, 2 -> 3 = 2 SP
+}
+
+// Rainbow cost to bring a character from current level to next level.
+// L0 -> L1 = 1, L1 -> L2 = 2, L2 -> L3 = 3. Returns null if at max.
+function characterUpgradeCost(currentLevel: number): number | null {
+  if (currentLevel >= 3) return null;
+  return currentLevel + 1;
+}
+
 interface TurnEntry {
   characterId: string;
   side: "left" | "right";
@@ -745,6 +777,9 @@ export default function BattlefieldPage() {
   // Cycle indices for cycleEffectPools: keyed by `${charId}|${skillId}|${poolIndex}` -> next index to apply
   const [cycleIndexMap, setCycleIndexMap] = useState<Record<string, number>>({});
   const [skillLevelMap, setSkillLevelMap] = useState<Record<string, number>>({}); // skillId -> current level (1-3, default 1)
+  const [characterLevelMap, setCharacterLevelMap] = useState<Record<string, number>>({}); // charId -> char level (0-3)
+  const [skillPointsMap, setSkillPointsMap] = useState<Record<string, number>>({}); // charId -> unspent skill points
+  const [endOfRoundPhaseOpen, setEndOfRoundPhaseOpen] = useState(false); // shows the leveling/shop modal between rounds
   const [expandedTemplateSkillId, setExpandedTemplateSkillId] = useState<string | null>(null);
   const [selectedTemplateActionId, setSelectedTemplateActionId] = useState<string | null>(null);
   const [templatePreviewTargetId, setTemplatePreviewTargetId] = useState<string>("");
@@ -853,7 +888,9 @@ export default function BattlefieldPage() {
     const fId = battleFormMap[charId] ?? null;
     const charForms = getFormsForCharacter(charId);
     const form = charForms.find((f) => f.id === fId);
-    const baseSpd = form?.statOverrides?.spd ?? char.stats.spd;
+    const rawBaseSpd = form?.statOverrides?.spd ?? char.stats.spd;
+    const charLv = characterLevelMap[charId] ?? 0;
+    const baseSpd = charLv > 0 ? Math.round(rawBaseSpd * (1 + 0.1 * charLv)) : rawBaseSpd;
     const buffMod = getBuffModifier(buffsMap[charId] ?? [], "spd");
     const clamped = Math.max(-90, Math.min(200, buffMod));
     // Check for set-stat tag override on spd
@@ -866,7 +903,7 @@ export default function BattlefieldPage() {
       }
     }
     return Math.max(1, Math.round(baseSpd * (1 + clamped / 100)));
-  }, [getCharacter, battleFormMap, getFormsForCharacter, buffsMap]);
+  }, [getCharacter, battleFormMap, getFormsForCharacter, buffsMap, characterLevelMap]);
 
   // Reset switch mode when turn changes
   useEffect(() => { setSwitchMode(false); setSwitchUsedByChar(new Set()); }, [currentTurnIndex, round]);
@@ -1241,6 +1278,9 @@ export default function BattlefieldPage() {
     setBattleFormMap(formMap);
     setCycleIndexMap({});
     setSkillLevelMap({});
+    setCharacterLevelMap({});
+    setSkillPointsMap({});
+    setEndOfRoundPhaseOpen(false);
     setTeamEnergy(generateTeamEnergy(formMap));
     setBattleLog([]);
     setFiredOnceEffects(new Set());
@@ -1299,6 +1339,9 @@ export default function BattlefieldPage() {
     setCurrentHpMap({});
     setBuffsMap({});
     setSkillLevelMap({});
+    setCharacterLevelMap({});
+    setSkillPointsMap({});
+    setEndOfRoundPhaseOpen(false);
     setTeamEnergy({});
     setHoveredCharId(null);
     setViewedCharId(null);
@@ -1563,6 +1606,25 @@ export default function BattlefieldPage() {
     // Tick buffs for the last character whose turn just ended
     const endingCharId = turnOrder[currentTurnIndex]?.characterId;
     if (endingCharId) tickBuffsForCharacter(endingCharId);
+    // Award +1 skill point to every living character on both teams.
+    // Defeated characters do not earn SP.
+    setSkillPointsMap((prev) => {
+      const next = { ...prev };
+      for (const team of teams) {
+        for (const p of team.placements) {
+          if (defeatedCharIds.has(p.characterId)) continue;
+          next[p.characterId] = (next[p.characterId] ?? 0) + 1;
+        }
+      }
+      return next;
+    });
+    // Open the end-of-round phase modal. The next round only starts
+    // when the player clicks "Begin Next Round" inside the modal.
+    setEndOfRoundPhaseOpen(true);
+  };
+
+  const beginNextRound = () => {
+    setEndOfRoundPhaseOpen(false);
     advanceToTurn(0, true);
   };
 
@@ -2277,28 +2339,7 @@ export default function BattlefieldPage() {
                               )}
                             </div>
                           </button>
-                          {canLevel && currentLevel < maxLevel && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSkillLevelMap((prev) => {
-                                  const next = { ...prev, [skill.id]: currentLevel + 1 };
-                                  // Sync variant group — all skills with same variantGroupId share level
-                                  if (skillAssign?.variantGroupId) {
-                                    for (const cs of characterSkills) {
-                                      if (cs.variantGroupId === skillAssign.variantGroupId && cs.skillId !== skill.id) {
-                                        next[cs.skillId] = currentLevel + 1;
-                                      }
-                                    }
-                                  }
-                                  return next;
-                                });
-                              }}
-                              className="w-full text-[8px] text-center py-0.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 font-medium border-t border-gray-700/50 transition-colors"
-                            >
-                              ↑ Upgrade
-                            </button>
-                          )}
+                          {/* Skill upgrades are now performed during the End-of-Round leveling phase. */}
                         </div>
                       );
                     };
@@ -2446,11 +2487,11 @@ export default function BattlefieldPage() {
                       const aChar2 = getCharacter(activeCharId);
                       const targetChar = getCharacter(tid);
                       if (!aChar2 || !targetChar) return null;
-                      const aStats2 = aForm2?.statOverrides ? { ...aChar2.stats, ...aForm2.statOverrides } : aChar2.stats;
+                      const aStats2 = applyCharLevelStats(aForm2?.statOverrides ? { ...aChar2.stats, ...aForm2.statOverrides } : aChar2.stats, characterLevelMap[aChar2.id] ?? 0);
                       const aElemDmg2 = aForm2?.elementalDmgOverride ? { ...aChar2.elementalDamage, ...aForm2.elementalDmgOverride } : aChar2.elementalDamage;
                       const dFormId2 = battleFormMap[tid] ?? null;
                       const dForm2 = dFormId2 ? getFormsForCharacter(tid).find((f) => f.id === dFormId2) : null;
-                      const dStats2 = dForm2?.statOverrides ? { ...targetChar.stats, ...dForm2.statOverrides } : targetChar.stats;
+                      const dStats2 = applyCharLevelStats(dForm2?.statOverrides ? { ...targetChar.stats, ...dForm2.statOverrides } : targetChar.stats, characterLevelMap[targetChar.id] ?? 0);
                       const dElemRes2Base = dForm2?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm2.elementalResOverride } : targetChar.elementalResistance;
                       const dPassiveGrants2 = getPassiveResistanceGrants(targetChar, dFormId2, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
                       const dElemRes2 = applyPassiveElementalGrants(dElemRes2Base, dPassiveGrants2);
@@ -2739,7 +2780,7 @@ export default function BattlefieldPage() {
                                     if (!attacker) return;
                                     const aFormId3 = battleFormMap[activeCharId] ?? null;
                                     const aForm3 = aFormId3 ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId3) : null;
-                                    const aStats3 = aForm3?.statOverrides ? { ...attacker.stats, ...aForm3.statOverrides } : attacker.stats;
+                                    const aStats3 = applyCharLevelStats(aForm3?.statOverrides ? { ...attacker.stats, ...aForm3.statOverrides } : attacker.stats, characterLevelMap[attacker.id] ?? 0);
                                     const aElemDmg3 = aForm3?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm3.elementalDmgOverride } : attacker.elementalDamage;
                                     const attackerCombat3 = { stats: aStats3, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg3, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
                                     // Apply to each target with fresh calculation
@@ -2749,7 +2790,7 @@ export default function BattlefieldPage() {
                                       if (!targetChar) continue;
                                       const dFormId3 = battleFormMap[tid] ?? null;
                                       const dForm3 = dFormId3 ? getFormsForCharacter(tid).find((f) => f.id === dFormId3) : null;
-                                      const dStats3 = dForm3?.statOverrides ? { ...targetChar.stats, ...dForm3.statOverrides } : targetChar.stats;
+                                      const dStats3 = applyCharLevelStats(dForm3?.statOverrides ? { ...targetChar.stats, ...dForm3.statOverrides } : targetChar.stats, characterLevelMap[targetChar.id] ?? 0);
                                       const dElemRes3Base = dForm3?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm3.elementalResOverride } : targetChar.elementalResistance;
                                       const dPassiveGrants3 = getPassiveResistanceGrants(targetChar, dFormId3, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
                                       const dElemRes3 = applyPassiveElementalGrants(dElemRes3Base, dPassiveGrants3);
@@ -2833,6 +2874,7 @@ export default function BattlefieldPage() {
                 activeFormId={battleFormMap[viewedCharId] ?? null}
                 buffs={buffsMap[viewedCharId] ?? []}
                 skillLevelMap={skillLevelMap}
+                characterLevelMap={characterLevelMap}
                 onSetFormId={(fid) => setBattleFormMap((prev) => ({ ...prev, [viewedCharId]: fid }))}
                 onSelectSkill={setSelectedSkill}
                 onSetHp={(charId, hp) =>
@@ -2945,6 +2987,192 @@ export default function BattlefieldPage() {
         );
       })()}
 
+      {/* End-of-Round Phase Modal: character leveling (rainbow) + skill leveling (SP) */}
+      {endOfRoundPhaseOpen && (
+        <div className="fixed inset-0 bg-black/80 z-40 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+            <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-white">End of Round {round}</h2>
+                <p className="text-[11px] text-gray-500">Spend rainbow energy to level characters. Spend skill points to upgrade ability skills.</p>
+              </div>
+              <button
+                onClick={beginNextRound}
+                className="px-4 py-2 rounded bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-semibold"
+              >
+                Begin Next Round →
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-4">
+              {teams.map((team) => {
+                const sideRainbow = teamEnergy[team.side]?.rainbow ?? 0;
+                return (
+                  <div key={team.id} className="border border-gray-800 rounded-lg">
+                    <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between bg-gray-950/50">
+                      <div className="text-sm font-semibold text-white">{team.name}</div>
+                      <div className="text-xs text-pink-300 font-bold">🌈 {sideRainbow}/5</div>
+                    </div>
+                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {team.placements.map((p) => {
+                        const char = getCharacter(p.characterId);
+                        if (!char) return null;
+                        const isDead = defeatedCharIds.has(p.characterId);
+                        const charLv = characterLevelMap[p.characterId] ?? 0;
+                        const sp = skillPointsMap[p.characterId] ?? 0;
+                        const charCost = characterUpgradeCost(charLv);
+                        const canBuyCharLv = !isDead && charCost !== null && sideRainbow >= charCost;
+                        // Equipped ability skills (only ability skills are levelable)
+                        const charAssigns = characterSkills.filter((cs) => cs.characterId === p.characterId);
+                        const equippedAbilityIds = char.equippedLoadout.abilityIds;
+                        const levelableSkills = equippedAbilityIds
+                          .map((sid) => skills.find((s) => s.id === sid))
+                          .filter((s): s is Skill => !!s && s.skillType === "ability" && s.leveled !== false);
+                        return (
+                          <div
+                            key={p.characterId}
+                            className={`border rounded-lg p-3 ${isDead ? "border-red-900/50 bg-red-950/10 opacity-60" : "border-gray-800 bg-gray-950/40"}`}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              {char.photoUrl ? (
+                                <img src={char.photoUrl} alt={char.name} className="w-10 h-10 rounded object-cover border border-gray-700" />
+                              ) : (
+                                <div className="w-10 h-10 rounded bg-gray-800 border border-gray-700" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-white truncate">{char.name}</div>
+                                <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                                  <span>Lv {charLv}/3</span>
+                                  <div className="flex items-center gap-0.5">
+                                    {[1, 2, 3].map((lv) => (
+                                      <div
+                                        key={lv}
+                                        className={`w-1.5 h-1.5 rounded-full ${lv <= charLv ? "bg-pink-400" : "bg-gray-700"}`}
+                                      />
+                                    ))}
+                                  </div>
+                                  {isDead && <span className="text-red-400 font-semibold">DEFEATED</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Character level upgrade */}
+                            <div className="mb-2">
+                              {charCost === null ? (
+                                <div className="text-[10px] text-gray-500 text-center py-1">Character level maxed</div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    if (!canBuyCharLv) return;
+                                    setCharacterLevelMap((prev) => ({ ...prev, [p.characterId]: charLv + 1 }));
+                                    setTeamEnergy((prev) => ({
+                                      ...prev,
+                                      [team.side]: {
+                                        ...(prev[team.side] ?? {}),
+                                        rainbow: (prev[team.side]?.rainbow ?? 0) - charCost,
+                                      },
+                                    }));
+                                    addBattleLog(`${char.name} leveled up to Lv ${charLv + 1} (+${(charLv + 1) * 10}% base stats).`);
+                                  }}
+                                  disabled={!canBuyCharLv}
+                                  className={`w-full text-[11px] py-1 rounded font-semibold transition-colors ${
+                                    canBuyCharLv
+                                      ? "bg-pink-700/40 hover:bg-pink-600/60 text-pink-100 border border-pink-500/40"
+                                      : "bg-gray-800 text-gray-600 border border-gray-800 cursor-not-allowed"
+                                  }`}
+                                >
+                                  Level Up → Lv {charLv + 1} (🌈 {charCost})
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Skill Points balance */}
+                            <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1 px-1">
+                              <span>Skill Points</span>
+                              <span className="text-blue-300 font-bold">{sp} SP</span>
+                            </div>
+
+                            {/* Levelable skill list */}
+                            <div className="space-y-1">
+                              {levelableSkills.length === 0 && (
+                                <div className="text-[10px] text-gray-600 italic text-center py-1">No levelable skills equipped</div>
+                              )}
+                              {levelableSkills.map((skill) => {
+                                const skillAssign = charAssigns.find((cs) => cs.skillId === skill.id);
+                                // Variant-group skills share level — read max from any sibling
+                                const groupLevel = skillAssign?.variantGroupId
+                                  ? Math.max(1, ...charAssigns.filter((cs) => cs.variantGroupId === skillAssign.variantGroupId).map((cs) => skillLevelMap[cs.skillId] ?? 1))
+                                  : skillLevelMap[skill.id] ?? 1;
+                                const upgradeCost = skillUpgradeCost(groupLevel);
+                                const canBuy = !isDead && upgradeCost !== null && sp >= upgradeCost;
+                                return (
+                                  <div key={skill.id} className="flex items-center gap-2 bg-gray-900/60 hover:bg-gray-900 border border-gray-800 hover:border-gray-700 rounded px-2 py-1 transition-colors">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedSkill(skill)}
+                                      className="flex-1 min-w-0 text-left"
+                                      title="View skill details"
+                                    >
+                                      <div className="text-[11px] text-white font-medium truncate hover:text-blue-200">{skill.name}</div>
+                                      <div className="flex items-center gap-0.5 mt-0.5">
+                                        {[1, 2, 3].map((lv) => (
+                                          <div
+                                            key={lv}
+                                            className={`w-1.5 h-1.5 rounded-full ${
+                                              lv <= groupLevel
+                                                ? groupLevel === 3 ? "bg-yellow-400" : "bg-blue-400"
+                                                : "bg-gray-700"
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                    </button>
+                                    {upgradeCost === null ? (
+                                      <span className="text-[9px] text-yellow-400 font-semibold">MAX</span>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          if (!canBuy) return;
+                                          setSkillLevelMap((prev) => {
+                                            const next = { ...prev, [skill.id]: groupLevel + 1 };
+                                            // Sync variant group siblings
+                                            if (skillAssign?.variantGroupId) {
+                                              for (const cs of charAssigns) {
+                                                if (cs.variantGroupId === skillAssign.variantGroupId && cs.skillId !== skill.id) {
+                                                  next[cs.skillId] = groupLevel + 1;
+                                                }
+                                              }
+                                            }
+                                            return next;
+                                          });
+                                          setSkillPointsMap((prev) => ({ ...prev, [p.characterId]: (prev[p.characterId] ?? 0) - upgradeCost }));
+                                          addBattleLog(`${char.name}'s ${skill.name} upgraded to Lv ${groupLevel + 1}.`);
+                                        }}
+                                        disabled={!canBuy}
+                                        className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                                          canBuy
+                                            ? "bg-blue-600/40 hover:bg-blue-500/60 text-blue-100 border border-blue-500/40"
+                                            : "bg-gray-800 text-gray-600 border border-gray-800 cursor-not-allowed"
+                                        }`}
+                                      >
+                                        ↑ {upgradeCost} SP
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Energy Choose Modal */}
       {energyChooseRequest && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
@@ -3040,6 +3268,8 @@ export default function BattlefieldPage() {
           getFormsForCharacter={getFormsForCharacter}
           currentHpMap={phase === "battle" ? currentHpMap : undefined}
           skillLevelMap={phase === "battle" ? skillLevelMap : undefined}
+          characterLevelMap={phase === "battle" ? characterLevelMap : undefined}
+          levelingMode={endOfRoundPhaseOpen}
           onClose={() => setSelectedSkill(null)}
           onViewSkill={setSelectedSkill}
           canAfford={phase === "battle" ? canAffordSkill(selectedSkill.id) : undefined}
@@ -3067,7 +3297,7 @@ export default function BattlefieldPage() {
               if (attacker && _level?.damageCategory) {
                 const aFormId = battleFormMap[activeCharId];
                 const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
-                const aStats = aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats;
+                const aStats = applyCharLevelStats(aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats, characterLevelMap[attacker.id] ?? 0);
                 const aElemDmg = aForm?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm.elementalDmgOverride } : attacker.elementalDamage;
                 const attackerCombat = { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
                 // Track running HP so repeat hits on the same target chain properly
@@ -3086,7 +3316,7 @@ export default function BattlefieldPage() {
                   if (!tChar) continue;
                   const dFormId = battleFormMap[pick.characterId];
                   const dForm = dFormId ? getFormsForCharacter(pick.characterId).find((f) => f.id === dFormId) : null;
-                  const dStats = dForm?.statOverrides ? { ...tChar.stats, ...dForm.statOverrides } : tChar.stats;
+                  const dStats = applyCharLevelStats(dForm?.statOverrides ? { ...tChar.stats, ...dForm.statOverrides } : tChar.stats, characterLevelMap[tChar.id] ?? 0);
                   const dElemResBase = dForm?.elementalResOverride ? { ...tChar.elementalResistance, ...dForm.elementalResOverride } : tChar.elementalResistance;
                   const dPassiveGrants = getPassiveResistanceGrants(tChar, dFormId ?? null, skills, characterSkills.filter((cs) => cs.characterId === pick.characterId), skillLevelMap);
                   const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
@@ -3248,7 +3478,7 @@ export default function BattlefieldPage() {
                   if (attacker) {
                     const aFormId = battleFormMap[activeCharId];
                     const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
-                    const aStats = aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats;
+                    const aStats = applyCharLevelStats(aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats, characterLevelMap[attacker.id] ?? 0);
                     const aElemDmg = aForm?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm.elementalDmgOverride } : attacker.elementalDamage;
                     const attackerCombat = { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
                     const cFormId = battleFormMap[best.mateId];
@@ -3803,13 +4033,13 @@ export default function BattlefieldPage() {
                 if (!attackerChar) continue;
                 // Defender as new attacker
                 const dForm = dFormId ? getFormsForCharacter(entry.targetId).find((f) => f.id === dFormId) : null;
-                const dStats = dForm?.statOverrides ? { ...defenderChar.stats, ...dForm.statOverrides } : defenderChar.stats;
+                const dStats = applyCharLevelStats(dForm?.statOverrides ? { ...defenderChar.stats, ...dForm.statOverrides } : defenderChar.stats, characterLevelMap[defenderChar.id] ?? 0);
                 const dElemDmg = dForm?.elementalDmgOverride ? { ...defenderChar.elementalDamage, ...dForm.elementalDmgOverride } : defenderChar.elementalDamage;
                 const counterAttacker = { stats: dStats, elementalResistance: defenderChar.elementalResistance, elementalDamage: dElemDmg, buffs: defenderBuffs, currentHp: defenderHp, col: getCharCol(entry.targetId) };
                 // Original attacker as new defender
                 const aFormId = battleFormMap[activeCharId] ?? null;
                 const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
-                const aStats = aForm?.statOverrides ? { ...attackerChar.stats, ...aForm.statOverrides } : attackerChar.stats;
+                const aStats = applyCharLevelStats(aForm?.statOverrides ? { ...attackerChar.stats, ...aForm.statOverrides } : attackerChar.stats, characterLevelMap[attackerChar.id] ?? 0);
                 const aElemResBase = aForm?.elementalResOverride ? { ...attackerChar.elementalResistance, ...aForm.elementalResOverride } : attackerChar.elementalResistance;
                 const aPassiveGrants = getPassiveResistanceGrants(attackerChar, aFormId, skills, characterSkills.filter((cs) => cs.characterId === activeCharId), skillLevelMap);
                 const aElemRes = applyPassiveElementalGrants(aElemResBase, aPassiveGrants);
@@ -3860,6 +4090,7 @@ function BattleDetailsPanel({
   activeFormId,
   buffs,
   skillLevelMap,
+  characterLevelMap,
   onSetFormId,
   onSelectSkill,
   onSetHp,
@@ -3879,6 +4110,7 @@ function BattleDetailsPanel({
   activeFormId: string | null;
   buffs: BuffDebuff[];
   skillLevelMap: Record<string, number>;
+  characterLevelMap: Record<string, number>;
   onSetFormId: (formId: string) => void;
   onSelectSkill: (skill: Skill) => void;
   onSetHp: (charId: string, hp: number) => void;
@@ -3894,7 +4126,8 @@ function BattleDetailsPanel({
   const panelPhoto = activeForm?.photoUrl ?? char.photoUrl;
   const panelType = activeForm?.typeOverride ?? char.type;
   const panelEnergy = activeForm?.energyOverride ?? char.energyGeneration;
-  const panelStats = activeForm?.statOverrides ? { ...char.stats, ...activeForm.statOverrides } : char.stats;
+  const panelStatsRaw = activeForm?.statOverrides ? { ...char.stats, ...activeForm.statOverrides } : char.stats;
+  const panelStats = applyCharLevelStats(panelStatsRaw, characterLevelMap[char.id] ?? 0);
 
   const currentHp = currentHpMap[char.id] ?? char.stats.hp;
   const maxHp = char.stats.hp;
@@ -4123,6 +4356,7 @@ function BattleSidePanel({
   charForms,
   activeFormId,
   buffs,
+  characterLevel,
   onSetFormId,
   onSelectSkill,
   onSetHp,
@@ -4139,6 +4373,7 @@ function BattleSidePanel({
   charForms: Form[];
   buffs: BuffDebuff[];
   activeFormId: string | null;
+  characterLevel?: number;
   onSetFormId: (formId: string) => void;
   onSelectSkill: (skill: Skill) => void;
   onSetHp: (charId: string, hp: number) => void;
@@ -4158,9 +4393,10 @@ function BattleSidePanel({
   const panelPhoto = activeForm?.photoUrl ?? char.photoUrl;
   const panelType = activeForm?.typeOverride ?? char.type;
   const panelEnergy = activeForm?.energyOverride ?? char.energyGeneration;
-  const panelStats = activeForm?.statOverrides
+  const panelStatsRaw = activeForm?.statOverrides
     ? { ...char.stats, ...activeForm.statOverrides }
     : char.stats;
+  const panelStats = applyCharLevelStats(panelStatsRaw, characterLevel ?? 0);
 
   // Compute buffed stats for display
   const buffedStats = (() => {
@@ -4892,6 +5128,8 @@ function SkillModal({
   getFormsForCharacter,
   currentHpMap,
   skillLevelMap,
+  characterLevelMap: modalCharLevelMap,
+  levelingMode,
   onClose,
   onViewSkill,
   onApplyDamage,
@@ -4916,6 +5154,8 @@ function SkillModal({
   onViewSkill: (skill: Skill) => void;
   currentHpMap?: Record<string, number>;
   skillLevelMap?: Record<string, number>;
+  characterLevelMap?: Record<string, number>;
+  levelingMode?: boolean;
   onApplyDamage?: (targetId: string, newHp: number) => void;
   onApplyAndUse?: (targets: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null; isSplash?: boolean }[], skill: Skill, opts?: { variableRepeats?: number; variableColor?: EnergyColor; variableSpend?: Partial<Record<EnergyColor, number>>; chosenPoolEffects?: SkillEffect[] }) => void;
   canAfford?: boolean;
@@ -4993,17 +5233,26 @@ function SkillModal({
 
         {(skill.skillType === "ability" || (skill.skillType === "conditional" && skill.leveled)) ? (
           <div className="space-y-3">
-            {(skillLevelMap ? [currentSkillLevel - 1] : [0, 1, 2]).map((i) => {
+            {(levelingMode ? [0, 1, 2] : skillLevelMap ? [currentSkillLevel - 1] : [0, 1, 2]).map((i) => {
               const level = skill.levels[i];
               if (!level) return null;
               const lvTemplate = getTemplateForLevel(i);
               const lvActions = getActionsForLevel(i);
+              const isCurrent = levelingMode && i + 1 === currentSkillLevel;
+              const isNext = levelingMode && i + 1 === currentSkillLevel + 1;
+              const cardBorder = isCurrent
+                ? "border-blue-500/60 ring-1 ring-blue-500/30"
+                : isNext
+                  ? "border-yellow-500/60 ring-1 ring-yellow-500/30"
+                  : "border-gray-700";
               return (
-                <div key={i} className="bg-gray-800 border border-gray-700 rounded-lg p-3 space-y-2">
+                <div key={i} className={`bg-gray-800 border ${cardBorder} rounded-lg p-3 space-y-2`}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-gray-400 uppercase">
                       Level {i + 1}
                     </span>
+                    {isCurrent && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-600/40 text-blue-200 font-semibold uppercase">Current</span>}
+                    {isNext && <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-600/40 text-yellow-200 font-semibold uppercase">Next ↑</span>}
                     {level.cost.length > 0 && <EnergyCostDisplay cost={level.cost} />}
                   </div>
                   {level.costNote && (
@@ -5224,7 +5473,7 @@ function SkillModal({
           // Resolve attacker combat stats
           const aFormId = battleFormMap?.[attackerChar.id];
           const aForm = aFormId && getFormsForCharacter ? getFormsForCharacter(attackerChar.id).find((f) => f.id === aFormId) : null;
-          const aStats = aForm?.statOverrides ? { ...attackerChar.stats, ...aForm.statOverrides } : attackerChar.stats;
+          const aStats = applyCharLevelStats(aForm?.statOverrides ? { ...attackerChar.stats, ...aForm.statOverrides } : attackerChar.stats, modalCharLevelMap?.[attackerChar.id] ?? 0);
           const aElemDmg = aForm?.elementalDmgOverride ? { ...attackerChar.elementalDamage, ...aForm.elementalDmgOverride } : attackerChar.elementalDamage;
           // Resolve grid columns from modalTeams for row modifiers
           const colOf = (cid: string): number | undefined => {
@@ -5264,7 +5513,7 @@ function SkillModal({
             };
             const dFormId = battleFormMap?.[targetId];
             const dForm = dFormId && getFormsForCharacter ? getFormsForCharacter(targetId).find((f) => f.id === dFormId) : null;
-            const dStats = dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats;
+            const dStats = applyCharLevelStats(dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats, modalCharLevelMap?.[targetChar.id] ?? 0);
             const dElemResBase = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
             const dPassiveGrants = getPassiveResistanceGrants(targetChar, dFormId ?? null, allSkills, modalCharSkills.filter((cs) => cs.characterId === targetId), skillLevelMap ?? {});
             const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
@@ -5315,7 +5564,7 @@ function SkillModal({
             if (!targetChar) return null;
             const dFormId = battleFormMap?.[targetId];
             const dForm = dFormId && getFormsForCharacter ? getFormsForCharacter(targetId).find((f) => f.id === dFormId) : null;
-            const dStats = dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats;
+            const dStats = applyCharLevelStats(dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats, modalCharLevelMap?.[targetChar.id] ?? 0);
             const dElemResBase = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
             const dPassiveGrants = getPassiveResistanceGrants(targetChar, dFormId ?? null, allSkills, modalCharSkills.filter((cs) => cs.characterId === targetId), skillLevelMap ?? {});
             const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
@@ -5386,7 +5635,7 @@ function SkillModal({
                     </div>
                   )}
                   {renderChoosePoolPicker()}
-                  {onApplyAndUse && results.length > 0 && skill.skillType !== "innate" && (
+                  {!levelingMode && onApplyAndUse && results.length > 0 && skill.skillType !== "innate" && (
                     <button
                       onClick={() => {
                         const entries: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null; isSplash?: boolean }[] = results.filter((r) => r.result).map(({ target, result }) => {
@@ -5451,7 +5700,7 @@ function SkillModal({
                       <span className={`text-lg font-bold ${result.isHealing ? "text-green-400" : "text-red-400"}`}>
                         {result.isHealing ? "+" : "-"}{result.finalDamage}
                       </span>
-                      {onApplyAndUse && skill.skillType !== "innate" && (
+                      {!levelingMode && onApplyAndUse && skill.skillType !== "innate" && (
                         <button
                           onClick={() => {
                             // For random-target skills, pick a random target now (the first hit);
@@ -5576,7 +5825,7 @@ function SkillModal({
         })()}
 
         {/* Effects/Dispels/Energy-only Apply and Use (for skills with no damage) */}
-        {attackerChar && modalTeams && getCharacterFn && onApplyAndUse && (() => {
+        {!levelingMode && attackerChar && modalTeams && getCharacterFn && onApplyAndUse && (() => {
           const effectiveLevel = skillLevelMap ? currentSkillLevel - 1 : previewLevel;
           const level = skill.levels[effectiveLevel];
           const effects = level?.effects ?? [];
