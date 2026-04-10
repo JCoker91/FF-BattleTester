@@ -230,6 +230,30 @@ if (!existingTagNames.has("healing-received")) {
   );
 }
 
+if (!existingTagNames.has("multi-strike")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "multi-strike", "Multi-Strike", "When the holder uses the specified skill, it triggers multiple times against the same target with independent miss/dodge/cover rolls per hit.",
+    JSON.stringify({ hits: { type: "number", label: "Total Hits", default: 2 }, skillId: { type: "skill", label: "Skill" } }), 21
+  );
+}
+
+if (!existingTagNames.has("guaranteed-hit")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "guaranteed-hit", "Guaranteed Hit", "Attacks from the holder bypass miss-chance, dodge-chance, and cover redirect.",
+    JSON.stringify({ filter: { type: "enum", label: "Attack Filter", default: "any", options: ["direct", "indirect", "aoe", "any"] } }), 22
+  );
+}
+
+// Update multi-strike tag to use "skill" param type instead of "string"
+const multiStrikeRow = db.prepare("SELECT id, param_schema FROM effect_tag_types WHERE name = 'multi-strike'").get() as { id: string; param_schema: string } | undefined;
+if (multiStrikeRow) {
+  const schema = JSON.parse(multiStrikeRow.param_schema);
+  if (schema.skillId?.type === "string") {
+    schema.skillId = { type: "skill", label: "Skill" };
+    db.prepare("UPDATE effect_tag_types SET param_schema = ? WHERE id = ?").run(JSON.stringify(schema), multiStrikeRow.id);
+  }
+}
+
 // Update existing cover tag to include damageCategory param
 const coverRow = db.prepare("SELECT id, param_schema FROM effect_tag_types WHERE name = 'cover'").get() as { id: string; param_schema: string } | undefined;
 if (coverRow) {

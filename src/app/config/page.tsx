@@ -134,6 +134,7 @@ function TagsEditor({
     resetForm();
   };
 
+  const { skills: allSkills } = useStore();
   const describeTag = (tag: EffectTag) => {
     const tt = effectTagTypes.find((t) => t.name === tag.type);
     if (!tt) return tag.type;
@@ -142,6 +143,10 @@ function TagsEditor({
       .map(([k, v]) => {
         const schema = tt.paramSchema[k];
         if (!schema) return `${k}: ${v}`;
+        if (schema.type === "skill") {
+          const sk = allSkills.find((s) => s.id === v);
+          return `${schema.label}: ${sk ? sk.name : v}`;
+        }
         if (Array.isArray(v)) return `${schema.label}: ${(v as string[]).join(", ")}`;
         return `${schema.label}: ${v}`;
       });
@@ -221,6 +226,50 @@ function TagsEditor({
 }
 
 function ParamInput({ paramKey, def, value, onChange }: { paramKey: string; def: ParamDef; value: unknown; onChange: (v: unknown) => void }) {
+  const { skills } = useStore();
+  if (def.type === "skill") {
+    const [search, setSearch] = useState("");
+    const selected = value as string | undefined;
+    const selectedSkill = selected ? skills.find((s) => s.id === selected) : null;
+    const filtered = search ? skills.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())) : skills;
+    return (
+      <div className="text-xs text-gray-400">
+        <span className="mr-1">{def.label}:</span>
+        <div className="mt-0.5 space-y-1">
+          {selectedSkill && (
+            <div className="flex items-center gap-1.5 bg-blue-600/20 border border-blue-500/40 rounded px-2 py-1">
+              <span className="text-blue-200 font-medium">{selectedSkill.name}</span>
+              <span className="text-[9px] text-gray-500">{selectedSkill.skillType}</span>
+              <button type="button" onClick={() => onChange(undefined)} className="ml-auto text-[9px] text-gray-500 hover:text-red-400">clear</button>
+            </div>
+          )}
+          <input
+            type="text"
+            placeholder="Search skills..."
+            className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none focus:border-gray-500"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <div className="max-h-32 overflow-y-auto bg-gray-800 border border-gray-700 rounded">
+              {filtered.length === 0 && <div className="px-2 py-1 text-gray-600 text-[10px]">No matches</div>}
+              {filtered.slice(0, 10).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => { onChange(s.id); setSearch(""); }}
+                  className={`w-full text-left px-2 py-1 text-[11px] hover:bg-gray-700 transition-colors ${s.id === selected ? "text-blue-300" : "text-white"}`}
+                >
+                  <span className="font-medium">{s.name}</span>
+                  <span className="text-[9px] text-gray-500 ml-1">{s.skillType}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   if (def.type === "number") {
     return (
       <label className="flex items-center gap-1 text-xs text-gray-400">

@@ -101,7 +101,8 @@ A `Skill` has a `skillType` (innate / basic / ability / conditional), a `leveled
 - Misc: `dispels`, `movements`, `energySteal`, `energyGenerate`, `variableRepeat`
 - Gates: `requiresAnyStatus`, `consumesCasterImbue`
 - Row sniping: `ignoreRowDefense` (bypasses the defender's back-row -20% taken modifier — built for Squall's Renzokuken)
-- Passive flag: `passive` (while-equipped effects auto-apply)
+- Guaranteed hit: `guaranteedHit` (bypasses miss-chance, dodge-chance, and cover redirect — per-skill toggle, separate from the `guaranteed-hit` buff tag)
+- Passive flag: `passive` (while-equipped effects auto-apply), `activeWhileDefeated` (opt-in for passives that persist after death, default false)
 - Range tags: `rangeTags` (e.g. `["melee"]` triggers back-row penalty)
 
 When you add a new field, you typically need to update: types.ts → SkillForm.tsx (UI) → battlefield/page.tsx (runtime, usually in `onApplyAndUse`) → optionally damage-calc.ts.
@@ -144,8 +145,12 @@ Currently seeded tags:
 - `faster-target-bonus` — bonus damage when attacker SPD > defender SPD
 - `fire-imbue` / `ice-imbue` / `thunder-imbue` — grants element to physical attacks, mutually exclusive
 - `healing-received` — modifies incoming heal amount on the holder
+- `multi-strike` — when the holder uses the specified skill, it triggers multiple times against the same target with independent miss/dodge/cover rolls per hit. Params: `hits` (number), `skillId` (skill picker — uses the `"skill"` param type which renders a searchable dropdown). Also wired into the counter-attack path so Counter + Dual Wield fires twice. Built for Squall's Dual Wield innate.
+- `guaranteed-hit` — attacks from the holder bypass miss-chance, dodge-chance, AND cover redirect. Params: `filter` (direct/indirect/aoe/any). Built for Squall's Lionheart accuracy passive.
 
-Tags are wired into runtime in damage-calc.ts (faster-target-bonus, healing-received, imbue) and in battlefield/page.tsx (everything else — the buff application path, processStartOfTurn, the cover/counter/effect resolution loops, etc.).
+Tags are wired into runtime in damage-calc.ts (faster-target-bonus, healing-received, imbue) and in battlefield/page.tsx (everything else — the buff application path, processStartOfTurn, the cover/counter/effect resolution loops, multi-strike loop, guaranteed-hit gate, etc.).
+
+**Tag param types**: `ParamDef.type` supports `"number"`, `"enum"`, `"string[]"`, and `"skill"`. The `"skill"` type renders a searchable skill picker dropdown in the status effect tag editor (config page) and displays the skill name in tag descriptions.
 
 ### Energy system
 
@@ -154,6 +159,11 @@ Tags are wired into runtime in damage-calc.ts (faster-target-bonus, healing-rece
 Rainbow conversion: 2 of any color → 1 rainbow via the conversion modal (click an energy in the pool).
 
 `variableRepeat` skills: cost is per-repeat, color can be specific or `"any"` (player picks the mix at use time via per-color steppers).
+
+**Skill-based energy generation** (`SkillLevel.energyGenerate`): a skill can generate energy for its team via three triggers:
+- `on-use` (default) — fires when the skill is used. E.g. "Deal damage and generate 1 Green energy."
+- `on-attack-hit` — fires only if the attack deals damage (not dodged/missed).
+- `round-start` — fires passively at the start of each round while the skill is equipped and the character is alive. Only `specific` and `random` modes supported (no picker at round start). Processed in `advanceToTurn` alongside base energy generation. Used by Squall's Red Draw innate and future color Draw variants for other characters.
 
 ### Leveling system (character level + skill points)
 
@@ -253,6 +263,7 @@ Splash patterns (`SplashTargetPattern`):
 - **`push-back`** — full punt to col=2, shifting other characters in the lane forward
 - **`push-back-one`** — one column step back (col → col+1). Swaps with whoever is directly behind, walks into empty cell otherwise. No-op if already at back row. Used by Squall's Rough Divide.
 - **`pull-forward`** — mirror of push-back toward col=0
+- **`pull-forward-one`** — one column step forward (col → col-1). Swaps with whoever is in front, walks into empty cell otherwise. No-op if already at front row. Used by Squall's Revolver Drive L1.
 - **`teleport-self`** — caster picks an empty grid cell to move into
 - **`recoil-self-one`** — automatic self-move: caster col → col+1, swap with ally behind or walk into empty cell. No-op at back row. "Cannon recoil" fantasy. Built for Squall's Fire Cross.
 - **`switch-self-adjacent`** — player-picker self-move: opens a picker highlighting the 4-directional neighbors of the caster's current cell on their own team's grid. Empty neighbors = walk into them; ally-occupied neighbors = swap with the ally. Uses `pendingTeleport` flag to defer turn advance until the click resolves (same pattern as `teleport-self`).
@@ -313,6 +324,11 @@ Identity: physical attacker who imbues her weapon with Fire/Ice/Thunder for elem
 
 Identity: weak early / strong late chain combatant. Cheap red-cost abilities form three vertical chains; each chain executes through Combo → Renzoku tiers, with Renzoku-tier finishers granting permanent ATK stacks (Lion's Might) that snowball into a late-game threat. Counterplay is exclusively silence, stun, and energy denial — chain statuses and Lion's Might are all undispellable by design.
 
+**Innate options**:
+- **Red Draw** — "Generate an additional red energy at the start of each round." Uses `energyGenerate` with `trigger: "round-start"`, mode `specific`, color `red`, count 1. Future characters will have color Draw variants (Blue/Green/Purple/Yellow Draw) as innate options.
+- **Dual Wield** — "Your Basic Attacks trigger twice." While-equipped buff with `multi-strike` tag (hits: 2, skillId: Basic Attack). Each hit has independent miss/dodge/cover rolls. Also works with Counter retaliations.
+- **Lionheart** (accuracy) — "Your attacks always hit." While-equipped buff with `guaranteed-hit` tag (filter: any). Bypasses miss-chance, dodge-chance, and cover redirect.
+
 **Chain statuses** (both `dispellable: false`, `untilNextTurn`):
 - **Combo** — applied by base abilities, gates the Combo-tier variants
 - **Renzoku** — applied by Combo-tier abilities, gates the Renzoku-tier variants
@@ -333,9 +349,16 @@ Identity: weak early / strong late chain combatant. Cheap red-cost abilities for
 - Lion's Might (atk +10% per stack, max 5, stackable, undispellable, permanent duration)
 - Aura (atk +30%, 2 turns, dispellable — it's a normal buff)
 
-**Junction**: tabled. May come back as an equippable stat-boost ability rather than a defining mechanic.
+**Standalone abilities** (non-chain, equippable alongside the chain variant group):
+- **Keen Edge** — self-buff, NOT instant. Grants ATK+ and guaranteed-hit for 3 turns. Setup move before starting a chain — spend one turn buffing, then chain with stronger hits that can't miss. Cost: red.
+- **Fated Circle** — physical low AOE to all enemies + applies "Shattered Armor" debuff (`dmgCatRes.physical` -10/15/20% per level, 2 turns). First physical damage resistance shred in the game. Team support — enables all physical attackers on the roster. Cost: 2 red.
+- **Revolver Drive** — physical moderate single-target + `pull-forward-one` (L1) / `pull-forward` (higher levels). Yellow energy cost so it doesn't compete with red chain economy. Positional utility — yank backline enemies forward into front-row danger. Cost: yellow.
 
-**Status as of session end**: First two starting abilities configured (Draw Cut, Trigger Shot). Solid Barrel just configured. Combo-tier and Renzoku-tier abilities still need to be created in the UI, plus the status effects above.
+**Statuses needed for standalone abilities**:
+- Keen Edge buff (ATK +%, guaranteed-hit tag, 3 turns, dispellable)
+- Shattered Armor (dmgCatRes.physical -%, 2 turns, dispellable)
+
+**Junction**: tabled. May come back as an equippable stat-boost ability rather than a defining mechanic.
 
 User is configuring these manually in the UI; do not configure them via code.
 
@@ -376,16 +399,32 @@ User is configuring these manually in the UI; do not configure them via code.
 
 ## Where we left off (most recent context)
 
-- **Squall design is locked** — see the Squall section above. Three vertical chains (Strike / Pierce / Sweep), 9 abilities, Combo / Renzoku / Lion's Might statuses. User has configured Draw Cut, Trigger Shot, and Solid Barrel (the three base abilities). Combo-tier and Renzoku-tier abilities + statuses still need to be created in the UI. **Currently working on Fire Cross (Sweep / Combo tier)** — both self-move variants (recoil vs picker) supported; user will playtest both before committing.
-- **System primitives built this session for Squall**:
-  - `row-behind-target` splash pattern (types.ts + battlefield/page.tsx `resolveSplashTargets` + SkillForm dropdown) — for Blasting Zone
-  - `push-back-one` movement type (types.ts + battlefield/page.tsx movement handler) — for Rough Divide
-  - `ignoreRowDefense` skill field (types.ts + damage-calc.ts + SkillForm checkbox) — for Renzokuken's anti-back-row sniping
-  - `recoil-self-one` and `switch-self-adjacent` movement types — for Fire Cross (auto cannon-recoil vs player-choice reposition)
-  - `MovementAction.timing` field (`before-damage` / `after-damage`, default after) + `applyMovementsTimingPhase()` helper in `onApplyAndUse` called at both phases + SkillForm timing dropdown. Known limitation: row-bonus damage scaling does not recompute after before-damage moves.
-- **Database snapshot import/export shipped** — `db/snapshot.json` workflow for cross-machine sync. See "Database snapshot" section.
-- **Leveling system playtested but not yet tuned** — character leveling (rainbow → +10% combat stats, max Lv 3) and skill points (1 SP/round per living char). Still uses 1 SP/round; refine after more playtesting.
-- **Bug fixes shipped this session**: defeated chars no longer activate their turn (HP ref pattern), passive turn-start effects fire on round 1 turn 1 (one-shot useEffect), end-of-round modal delays 1.5s for damage floats, defeated chars filtered from all targeting (resolveTargets HP filter), variable-repeat locks target for non-random-enemy skills, column-pierce now hits exactly one cell behind (not the whole lane), action bar locks during the 1.5s end-of-round delay (`roundEnding` flag).
+- **Squall configuration in progress** — chain abilities (9 variants) are designed and being configured in the UI. Standalone abilities (Keen Edge, Fated Circle, Revolver Drive) are designed and ready to configure. Innate options (Red Draw, Dual Wield, Lionheart) are designed; Red Draw is configured.
+- **System primitives built for Squall across sessions**:
+  - `row-behind-target` splash pattern — for Blasting Zone
+  - `push-back-one` movement type — for Rough Divide
+  - `pull-forward-one` movement type — for Revolver Drive L1
+  - `ignoreRowDefense` skill field — for Renzokuken's anti-back-row sniping
+  - `guaranteedHit` skill field — per-skill toggle that bypasses miss/dodge/cover
+  - `recoil-self-one` and `switch-self-adjacent` movement types — for Fire Cross
+  - `MovementAction.timing` field (`before-damage` / `after-damage`) — enables "dash then strike" vs "strike then recoil"
+  - `round-start` effect trigger on `energyGenerate` — for Red Draw innate. Wired into both `startBattle` (round 1) and `advanceToTurn` (subsequent rounds).
+  - `multi-strike` effect tag (hits, skillId) — for Dual Wield innate. Independent miss/dodge/cover per hit. Also wired into counter-attacks.
+  - `guaranteed-hit` effect tag (filter) — for Lionheart innate. Bypasses miss, dodge, and cover.
+  - `"skill"` param type for effect tag editor — searchable skill picker dropdown
+  - `activeWhileDefeated` skill field — opt-in for passives that persist after death
+- **UI improvements shipped this session**:
+  - SkillForm collapsible sections: Core (always open), Damage & Targeting, Damage Riders, Effects, Actions, Template. Blue dot indicator when section has content.
+  - Active character panel: buffs/debuffs display (color-coded pills), unaffordable skills greyed out (opacity-40, still clickable)
+  - Details panel: same buff display + skill affordability treatment
+  - Template spell affordability: greyed out when unaffordable, uses spell's own cost (not parent template)
+  - Variable repeat: slider replaced with clickable numbered energy circles, capped by available energy
+  - Battle stats panel: collapsible table with Total/Direct/AOE/Indirect/True damage breakdown per character + healing/taken/energy/skills
+  - End-of-round modal: energy pool display with click-to-convert rainbow conversion
+  - Defeated characters: greyed out + grayscale on grid, "DEFEATED" label, card border tint at low HP (yellow <50%, red <25%), HP bar bumped to 8px
+- **Bug fixes shipped this session**: template spells now deduct spell's own energy cost (not parent template's), defeated characters can't cover, choose-mode energy steal credits the correct caster (stores casterId in request), round-start energy generation fires on round 1 (not just round 2+)
+- **Database snapshot import/export shipped** — `db/snapshot.json` workflow for cross-machine sync.
+- **Leveling system playtested but not yet tuned** — character leveling (rainbow → +10% combat stats, max Lv 3) and skill points (1 SP/round per living char).
 - **Future shop feature** is on the table for the End-of-Round Phase modal — scaffolding is ready.
 
 ## Quick orientation for a new Claude

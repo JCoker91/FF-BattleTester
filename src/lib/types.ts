@@ -60,7 +60,7 @@ export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "no-target": "No Target",
 };
 
-export const EFFECT_TRIGGERS = ["on-use", "while-equipped", "on-attack-hit", "turn-start", "on-hp-below", "on-hp-above"] as const;
+export const EFFECT_TRIGGERS = ["on-use", "while-equipped", "on-attack-hit", "turn-start", "round-start", "on-hp-below", "on-hp-above"] as const;
 export type EffectTrigger = (typeof EFFECT_TRIGGERS)[number];
 
 export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
@@ -68,6 +68,7 @@ export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
   "while-equipped": "While Equipped",
   "on-attack-hit": "On Attack Hit",
   "turn-start": "Turn Start",
+  "round-start": "Round Start",
   "on-hp-below": "On HP Below %",
   "on-hp-above": "On HP At/Above %",
 };
@@ -101,13 +102,14 @@ export interface DispelAction {
   targetType: TargetType; // who gets dispelled
 }
 
-export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "teleport-self", "recoil-self-one", "switch-self-adjacent"] as const;
+export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "pull-forward-one", "teleport-self", "recoil-self-one", "switch-self-adjacent"] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
 export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   "push-back": "Push to Back Row",
   "push-back-one": "Push Back 1 Space",
   "pull-forward": "Pull to Front Row",
+  "pull-forward-one": "Pull Forward 1 Space",
   "teleport-self": "Teleport Self to Empty Space",
   "recoil-self-one": "Recoil Self 1 Space Back",
   "switch-self-adjacent": "Switch Self to Adjacent Space (player picks)",
@@ -149,6 +151,7 @@ export interface SkillLevel {
   templateId?: string | null;
   instant?: boolean;
   passive?: boolean; // "while equipped" — effects auto-apply permanently while skill is equipped
+  activeWhileDefeated?: boolean; // if true, passive/while-equipped effects persist even when the character is defeated (default: false)
   damageCategory?: "physical" | "magical" | "true" | "healing";
   rangeTags?: ("melee" | "ranged" | "magic")[]; // optional delivery tags; melee triggers back-row damage penalty
   damageTier?: string;
@@ -159,6 +162,7 @@ export interface SkillLevel {
   ignoreDefense?: number; // % of target's DEF to ignore (0-100), physical attacks only
   ignoreSpirit?: number; // % of target's SPI to ignore (0-100), magical attacks only
   ignoreRowDefense?: boolean; // when true, the defender's back-row -20% taken modifier is bypassed (anti-back-row sniping skills)
+  guaranteedHit?: boolean; // when true, this skill bypasses miss-chance, dodge-chance, and cover redirect
   effects?: SkillEffect[]; // buff/debuff applications
   randomEffectPools?: RandomEffectPool[]; // pools of candidate effects, randomly picked at use time
   chooseEffectPools?: RandomEffectPool[]; // pools of candidate effects, player picks at use time
@@ -238,7 +242,7 @@ export interface EffectTag {
 }
 
 export interface ParamDef {
-  type: "number" | "enum" | "string[]";
+  type: "number" | "enum" | "string[]" | "skill";
   label: string;
   default?: unknown;
   options?: string[]; // for enum type

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-04-09T23:45:43.007Z",
+  "exportedAt": "2026-04-10T18:43:11.314Z",
   "tables": {
     "characters": [
       {
@@ -17,7 +17,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":\"ec672aca-1cf9-4b31-a8c2-fbcaa188d080\",\"basicId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\",\"abilityIds\":[\"30594736-8563-428d-abe7-cdbefe9a38dc\",\"a6132f45-4877-415c-bea6-4805d05fe83e\",\"f4699d76-1ce9-44fb-bc6a-b2cdeeb5f442\"]}",
+        "equipped_loadouts": "{\"innateId\":\"2ba521d9-da46-44a5-9b6b-cc8bac211f8c\",\"basicId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\",\"abilityIds\":[\"eb7c840f-5771-4123-ab4f-e4e7d897fa9f\",\"a8fc5cbe-1a71-4519-a638-ff7a17b25816\",\"f4699d76-1ce9-44fb-bc6a-b2cdeeb5f442\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -39,7 +39,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":\"d194610b-64fb-4088-a38e-a2bc32de7e30\",\"basicId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\",\"abilityIds\":[\"fb58d63d-bfd2-48f4-b769-d97eb0736449\",\"c3a45369-adb3-48d7-a71f-227440de824a\",\"84c47ab3-355b-4d7b-9bd7-909d1d6149f7\"]}",
+        "equipped_loadouts": "{\"innateId\":\"d194610b-64fb-4088-a38e-a2bc32de7e30\",\"basicId\":\"485d8e36-df3b-4007-b9dd-57c1d3959d2f\",\"abilityIds\":[\"fb58d63d-bfd2-48f4-b769-d97eb0736449\",\"84c47ab3-355b-4d7b-9bd7-909d1d6149f7\",\"dac79645-2951-4bb0-92dd-81165dd4b1ec\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -61,7 +61,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":\"d9014c28-9ee4-467c-ad7a-47fa2003fbbc\",\"basicId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\",\"abilityIds\":[\"70891f2d-63aa-4393-8f53-169e1dfcb159\",\"b5e2c0e7-c98b-4135-b447-0bfacf612dd7\",\"602b8432-a038-42df-9503-3498a20f0926\"]}",
+        "equipped_loadouts": "{\"innateId\":\"d9014c28-9ee4-467c-ad7a-47fa2003fbbc\",\"basicId\":\"ba642e6f-ef06-4e05-8355-f28bd2ebe7fa\",\"abilityIds\":[\"70891f2d-63aa-4393-8f53-169e1dfcb159\",\"b5e2c0e7-c98b-4135-b447-0bfacf612dd7\",\"602b8432-a038-42df-9503-3498a20f0926\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -83,7 +83,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":\"581f1cf1-76f2-4943-ba9f-c8332774330b\",\"basicId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\",\"abilityIds\":[\"dac79645-2951-4bb0-92dd-81165dd4b1ec\",\"29835f6a-453a-4d07-8291-3dc193491411\",\"78f67bce-1b96-465b-90e0-3adb4082bcfa\"]}",
+        "equipped_loadouts": "{\"innateId\":\"581f1cf1-76f2-4943-ba9f-c8332774330b\",\"basicId\":\"262c004e-4edf-4c2a-aecd-48fe42c4daf9\",\"abilityIds\":[\"dac79645-2951-4bb0-92dd-81165dd4b1ec\",\"29835f6a-453a-4d07-8291-3dc193491411\",\"549e64dd-1c5f-4f47-9cf2-6ff7d668653d\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":120}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -96,7 +96,7 @@
         "name": "Squall",
         "series": "FFVIII",
         "type": "Buster",
-        "energy_generation": "[{\"color\":\"red\",\"amount\":2},{\"color\":\"purple\",\"amount\":1}]",
+        "energy_generation": "[{\"color\":\"red\",\"amount\":2},{\"color\":\"green\",\"amount\":1}]",
         "stats": "{\"hp\":1200,\"spi\":42,\"atk\":62,\"mAtk\":24,\"def\":52,\"spd\":56}",
         "passive": "",
         "basic_attack": "",
@@ -105,10 +105,10 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":null,\"basicId\":null,\"abilityIds\":[\"ad21b300-7d75-45a1-865c-2650a6b50fd5\",\"610abce2-01f8-48fb-8636-8426db9293bf\",\"5d3d0f7e-39ca-4265-b39b-f6f4a1d0c6e7\"]}",
+        "equipped_loadouts": "{\"innateId\":\"17280629-d631-40a6-98f2-674d0d8e0f21\",\"basicId\":\"485d8e36-df3b-4007-b9dd-57c1d3959d2f\",\"abilityIds\":[\"ad21b300-7d75-45a1-865c-2650a6b50fd5\",\"610abce2-01f8-48fb-8636-8426db9293bf\",\"5d3d0f7e-39ca-4265-b39b-f6f4a1d0c6e7\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
-        "status_resistance": "{}",
+        "status_resistance": "{\"d5738d63-2110-4f25-a156-3982db861def\":0}",
         "gender": "male",
         "hp_scaled_v1": 1,
         "show_in_bench": 1
@@ -149,7 +149,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":\"7260e516-e99e-42fa-b7d1-b0564cff0977\",\"basicId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\",\"abilityIds\":[\"d87b2ae8-a726-4cbd-a319-c49eab5de5f9\",\"83acc1ab-3a1b-4fa7-b84e-c60abd9c7e26\",\"becddd6e-91f8-41f7-ab4b-0866c6e32da5\"]}",
+        "equipped_loadouts": "{\"innateId\":\"7260e516-e99e-42fa-b7d1-b0564cff0977\",\"basicId\":\"4dafe9dc-6b86-481a-9b3d-5b4eaeeeb283\",\"abilityIds\":[\"83acc1ab-3a1b-4fa7-b84e-c60abd9c7e26\",\"becddd6e-91f8-41f7-ab4b-0866c6e32da5\",\"da727476-f8e8-457d-a6f3-3b2beb7ca795\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -1078,7 +1078,7 @@
       {
         "id": "a8fc5cbe-1a71-4519-a638-ff7a17b25816",
         "name": "Thievery",
-        "levels": "[{\"description\":\"Deals **moderate** [[physical-damage]], [[direct-damage]] damage to targeted enemy based on amount of energy stolen. Resets after use.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":2}],\"damageCategory\":\"physical\",\"targetType\":\"target-enemy\",\"stolenEnergyScaling\":{\"perStack\":10,\"maxStacks\":5,\"resetOnUse\":true},\"rangeTags\":[\"ranged\"]},{\"description\":\"Deals **high**  [[physical-damage]], [[direct-damage]]  damage to targeted enemy based on amount of energy stolen. Resets after use.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":2}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"target-enemy\",\"stolenEnergyScaling\":{\"perStack\":10,\"maxStacks\":5,\"resetOnUse\":true},\"rangeTags\":[\"ranged\"]},{\"description\":\"Deals **high**  [[physical-damage]], [[direct-damage]]  damage to targeted enemy based on amount of energy stolen.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":2}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"target-enemy\",\"stolenEnergyScaling\":{\"perStack\":10,\"maxStacks\":5,\"resetOnUse\":false},\"rangeTags\":[\"ranged\"]}]",
+        "levels": "[{\"description\":\"Deals **moderate** [[physical-damage]], [[direct-damage]] damage to targeted enemy based on amount of energy stolen. Ignores target back row defense. Resets after use.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":2}],\"damageCategory\":\"physical\",\"targetType\":\"target-enemy\",\"stolenEnergyScaling\":{\"perStack\":10,\"maxStacks\":5,\"resetOnUse\":true},\"rangeTags\":[\"ranged\"],\"ignoreRowDefense\":true},{\"description\":\"Deals **high**  [[physical-damage]], [[direct-damage]]  damage to targeted enemy based on amount of energy stolen. Ignores target back row defense. Resets after use.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":2}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"target-enemy\",\"stolenEnergyScaling\":{\"perStack\":10,\"maxStacks\":5,\"resetOnUse\":true},\"rangeTags\":[\"ranged\"],\"ignoreRowDefense\":true},{\"description\":\"Deals **high**  [[physical-damage]], [[direct-damage]]  damage to targeted enemy based on amount of energy stolen. Ignores target back row defense.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":2}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"target-enemy\",\"stolenEnergyScaling\":{\"perStack\":10,\"maxStacks\":5,\"resetOnUse\":false},\"rangeTags\":[\"ranged\"],\"ignoreRowDefense\":true}]",
         "character_id": "de1af1db-2d4e-411f-9dab-ca406dc0ad9b",
         "skill_type": "ability",
         "form_id": "04c0fda9-4473-4bd8-855d-12610e902c52",
@@ -1174,7 +1174,7 @@
       {
         "id": "2ba521d9-da46-44a5-9b6b-cc8bac211f8c",
         "name": "Duel Wield",
-        "levels": "[{\"description\":\"Basic attacks attack twice each hit at 60% damage.\",\"cost\":[]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Basic attacks attack twice each hit at 60% damage.\",\"cost\":[],\"effects\":[{\"effectId\":\"828da656-2eb7-4948-9d8e-1f5f2b5e235b\",\"targetType\":\"self\",\"modifier\":20,\"duration\":-1,\"trigger\":\"while-equipped\"}],\"passive\":true},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "de1af1db-2d4e-411f-9dab-ca406dc0ad9b",
         "skill_type": "innate",
         "form_id": null,
@@ -1750,7 +1750,7 @@
       {
         "id": "70891f2d-63aa-4393-8f53-169e1dfcb159",
         "name": "Braver",
-        "levels": "[{\"description\":\"Deals **moderate** [[physical-damage]], [[direct-damage]] to a front row enemy and generates **1** [[limit-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"physical\",\"targetType\":\"front-row-enemy\",\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2}],\"rangeTags\":[\"melee\"]},{\"description\":\"Deals **high** [[physical-damage]], [[direct-damage]] to a front row enemy and generates **1** [[limit-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"green\",\"amount\":1}],\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"front-row-enemy\",\"rangeTags\":[\"melee\"]},{\"description\":\"Deals **high** [[physical-damage]], [[direct-damage]] to a front row enemy and generates **2** [[limit-buff]].\",\"cost\":[],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"front-row-enemy\",\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2}],\"rangeTags\":[\"melee\"]}]",
+        "levels": "[{\"description\":\"Deals **moderate** [[physical-damage]], [[direct-damage]] to a front row enemy and generates **1** [[limit-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"physical\",\"targetType\":\"front-row-enemy\",\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2}],\"rangeTags\":[\"melee\"]},{\"description\":\"Deals **high** [[physical-damage]], [[direct-damage]] to a front row enemy and generates **1** [[limit-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"green\",\"amount\":1}],\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"front-row-enemy\",\"rangeTags\":[\"melee\"]},{\"description\":\"Deals **high** [[physical-damage]], [[direct-damage]] to a front row enemy and generates **2** [[limit-buff]].\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"physical\",\"damageTier\":\"high\",\"targetType\":\"front-row-enemy\",\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2}],\"rangeTags\":[\"melee\"]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -2069,6 +2069,54 @@
         "variant_group_id": null,
         "leveled": 1,
         "description": "Deals damage to an enemy and targets behind.",
+        "template_id": null
+      },
+      {
+        "id": "87852a01-f17e-4962-850e-2d371522a273",
+        "name": "Red Draw",
+        "levels": "[{\"description\":\"Generates an additional Red energy at the start of the round.\",\"cost\":[],\"passive\":true,\"energyGenerate\":{\"count\":1,\"mode\":\"specific\",\"color\":\"red\",\"trigger\":\"round-start\"}},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "innate",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Generates an additional Red energy at the start of the round.",
+        "template_id": null
+      },
+      {
+        "id": "17280629-d631-40a6-98f2-674d0d8e0f21",
+        "name": "Gunblade Master",
+        "levels": "[{\"description\":\"All [[direct-damage]] damage attacks never miss and bypass Cover.\",\"cost\":[],\"passive\":true,\"effects\":[{\"effectId\":\"d37d2573-0fbe-43e3-9e9f-06e12dcf0289\",\"targetType\":\"self\",\"modifier\":20,\"duration\":-1,\"trigger\":\"while-equipped\"}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "innate",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Attacks never miss.",
+        "template_id": null
+      },
+      {
+        "id": "fcc03460-b7f5-475b-ba65-edba7f52145b",
+        "name": "Fated Circle",
+        "levels": "[{\"description\":\"Deals **minor** [[physical-damage]], [[aoe-damage]] damage to all enemies and reduces [[physical-resistance]] resistance by **10%** for **3** turns.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"purple\",\"amount\":1}],\"damageCategory\":\"physical\",\"damageTier\":\"minor\",\"damageSourceOverride\":\"aoe\",\"targetType\":\"aoe-enemy\",\"rangeTags\":[\"ranged\"],\"effects\":[{\"effectId\":\"59c2017d-3116-468b-9286-76799124c967\",\"targetType\":\"aoe-enemy\",\"modifier\":-10,\"duration\":3,\"trigger\":\"on-attack-hit\"}]},{\"description\":\"Deals **minor** [[physical-damage]], [[aoe-damage]] damage to all enemies and reduces [[physical-resistance]] resistance by **20%** for **3** turns.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"purple\",\"amount\":1}],\"rangeTags\":[\"ranged\"],\"damageCategory\":\"physical\",\"damageTier\":\"minor\",\"damageSourceOverride\":\"aoe\",\"targetType\":\"aoe-enemy\",\"effects\":[{\"effectId\":\"59c2017d-3116-468b-9286-76799124c967\",\"targetType\":\"aoe-enemy\",\"modifier\":-20,\"duration\":3,\"trigger\":\"on-attack-hit\"}]},{\"description\":\"Deals **minor** [[physical-damage]], [[aoe-damage]] damage to all enemies and reduces [[physical-resistance]] resistance by **30%** for **3** turns.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"purple\",\"amount\":1}],\"rangeTags\":[\"ranged\"],\"damageCategory\":\"physical\",\"damageTier\":\"minor\",\"damageSourceOverride\":\"aoe\",\"targetType\":\"aoe-enemy\",\"effects\":[{\"effectId\":\"59c2017d-3116-468b-9286-76799124c967\",\"targetType\":\"aoe-enemy\",\"modifier\":-30,\"duration\":3,\"trigger\":\"on-attack-hit\"}]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 1,
+        "description": "Deals damage and reduces physical resistance.",
+        "template_id": null
+      },
+      {
+        "id": "d5722a65-42c7-4c57-a9f7-281f165920ca",
+        "name": "Revolver Drive",
+        "levels": "[{\"description\":\"Deals **low** [[physical-damage]], [[direct-damage]] to target enemy and pull them forward **1** space.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":1}],\"damageCategory\":\"physical\",\"damageTier\":\"low\",\"damageSourceOverride\":\"direct\",\"rangeTags\":[\"ranged\"],\"targetType\":\"target-enemy\",\"movements\":[{\"type\":\"pull-forward-one\",\"targetType\":\"target-enemy\",\"trigger\":\"on-attack-hit\"}]},{\"description\":\"Deals **moderate** [[physical-damage]], [[direct-damage]] to target enemy and pull them forward **1** space.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":1}],\"damageCategory\":\"physical\",\"damageSourceOverride\":\"direct\",\"targetType\":\"target-enemy\",\"rangeTags\":[\"ranged\"],\"movements\":[{\"type\":\"pull-forward-one\",\"targetType\":\"target-enemy\",\"trigger\":\"on-attack-hit\"}]},{\"description\":\"Deals **moderate** [[physical-damage]], [[direct-damage]] to target enemy and pull them to the front row.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"yellow\",\"amount\":1}],\"movements\":[{\"type\":\"pull-forward\",\"targetType\":\"target-enemy\",\"trigger\":\"on-attack-hit\"}],\"damageCategory\":\"physical\",\"damageSourceOverride\":\"direct\",\"targetType\":\"target-enemy\",\"rangeTags\":[\"ranged\"]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 1,
+        "description": "Deal damage and pull enemy closer.",
         "template_id": null
       }
     ],
@@ -2783,6 +2831,42 @@
         "variant_group_id": "6b99d7c8-e8ed-4833-9bf6-eab6fe679566",
         "conditions": null,
         "status_condition_id": "81c177d1-7e9d-4a02-9d53-a15eee27cd8c"
+      },
+      {
+        "id": "b841248b-deb3-4279-8825-6cef11dc1ece",
+        "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
+        "skill_id": "87852a01-f17e-4962-850e-2d371522a273",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "ada56280-3525-496e-9e28-31e0baeb17cb",
+        "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
+        "skill_id": "17280629-d631-40a6-98f2-674d0d8e0f21",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "831504dd-c35d-4775-8fb5-55dcd780b8db",
+        "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
+        "skill_id": "fcc03460-b7f5-475b-ba65-edba7f52145b",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "c97b7624-3986-4f8a-b6f1-9cfcbb97bb7e",
+        "character_id": "f18458e1-4483-4a88-94b5-05995a0dcd6a",
+        "skill_id": "d5722a65-42c7-4c57-a9f7-281f165920ca",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
       }
     ],
     "skill_templates": [
@@ -3499,6 +3583,12 @@
         "keyword": "renzoku-status",
         "label": "Renzoku",
         "description": "Grants access to Renzoku abilities."
+      },
+      {
+        "id": "1e160631-83d2-4677-bc86-41525400317d",
+        "keyword": "physical-resistance",
+        "label": "Physical",
+        "description": "Determines physical damage received."
       }
     ],
     "teams": [
@@ -3506,13 +3596,13 @@
         "id": "team-left",
         "name": "Team A",
         "side": "left",
-        "placements": "[{\"characterId\":\"f18458e1-4483-4a88-94b5-05995a0dcd6a\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"de1af1db-2d4e-411f-9dab-ca406dc0ad9b\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":1,\"col\":2}}]"
+        "placements": "[{\"characterId\":\"4972d77e-87b0-403c-9d2a-04481075dda6\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":1,\"col\":2}},{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":0,\"col\":2}}]"
       },
       {
         "id": "team-right",
         "name": "Team B",
         "side": "right",
-        "placements": "[{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"de395cae-5f23-4158-aa45-50e6c7ea68a1\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4972d77e-87b0-403c-9d2a-04481075dda6\",\"position\":{\"row\":2,\"col\":1}}]"
+        "placements": "[{\"characterId\":\"f18458e1-4483-4a88-94b5-05995a0dcd6a\",\"position\":{\"row\":2,\"col\":1}},{\"characterId\":\"de395cae-5f23-4158-aa45-50e6c7ea68a1\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"de1af1db-2d4e-411f-9dab-ca406dc0ad9b\",\"position\":{\"row\":0,\"col\":0}}]"
       }
     ],
     "status_effects": [
@@ -4382,6 +4472,40 @@
         "form_id": null,
         "dispellable": 0,
         "polarity": "positive"
+      },
+      {
+        "id": "828da656-2eb7-4948-9d8e-1f5f2b5e235b",
+        "name": "Dual Wield",
+        "category": "status",
+        "stat": "none",
+        "default_modifier": null,
+        "stackable": 0,
+        "max_stacks": null,
+        "on_max_stacks": null,
+        "resistable": 0,
+        "stats": "[\"none\"]",
+        "behavior": null,
+        "tags": "[{\"type\":\"multi-strike\",\"params\":{\"hits\":2,\"skillId\":\"55b2b785-c93a-48e9-a7da-420eda2352f0\"}}]",
+        "form_id": null,
+        "dispellable": 0,
+        "polarity": "positive"
+      },
+      {
+        "id": "d37d2573-0fbe-43e3-9e9f-06e12dcf0289",
+        "name": "Guaranteed Hit",
+        "category": "status",
+        "stat": "none",
+        "default_modifier": null,
+        "stackable": 0,
+        "max_stacks": null,
+        "on_max_stacks": null,
+        "resistable": 0,
+        "stats": "[\"none\"]",
+        "behavior": null,
+        "tags": "[{\"type\":\"guaranteed-hit\",\"params\":{\"filter\":\"direct\"}}]",
+        "form_id": null,
+        "dispellable": 0,
+        "polarity": null
       }
     ],
     "effect_tag_types": [
@@ -4544,6 +4668,22 @@
         "description": "Modifies incoming healing on the affected character. Negative values reduce healing, positive values amplify it.",
         "param_schema": "{\"percent\":{\"type\":\"number\",\"label\":\"Modifier %\",\"default\":-30}}",
         "sort_order": 20
+      },
+      {
+        "id": "6695d87b-03e4-4eed-80d9-a7cf8f8dd6ef",
+        "name": "multi-strike",
+        "label": "Multi-Strike",
+        "description": "When the holder uses the specified skill, it triggers multiple times against the same target with independent miss/dodge/cover rolls per hit.",
+        "param_schema": "{\"hits\":{\"type\":\"number\",\"label\":\"Total Hits\",\"default\":2},\"skillId\":{\"type\":\"skill\",\"label\":\"Skill\"}}",
+        "sort_order": 21
+      },
+      {
+        "id": "d5895d59-e8c5-4614-89c5-ba4b22261954",
+        "name": "guaranteed-hit",
+        "label": "Guaranteed Hit",
+        "description": "Attacks from the holder bypass miss-chance, dodge-chance, and cover redirect.",
+        "param_schema": "{\"filter\":{\"type\":\"enum\",\"label\":\"Attack Filter\",\"default\":\"any\",\"options\":[\"direct\",\"indirect\",\"aoe\",\"any\"]}}",
+        "sort_order": 22
       }
     ]
   }

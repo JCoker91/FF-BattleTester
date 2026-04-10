@@ -48,6 +48,29 @@ const ENERGY_HEX: Record<EnergyColor, string> = {
 };
 import { EnergyCostDisplay } from "./EnergyBadge";
 
+function CollapsibleSection({ title, hasContent, defaultOpen, children }: {
+  title: string;
+  hasContent?: boolean;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  return (
+    <div className="border border-gray-700/50 rounded overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left bg-gray-800/40 hover:bg-gray-800/70 transition-colors"
+      >
+        <span className="text-[10px] text-gray-500 w-3">{open ? "\u25BC" : "\u25B6"}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{title}</span>
+        {hasContent && !open && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />}
+      </button>
+      {open && <div className="px-2.5 pb-2.5 pt-2 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
 const emptyLevel = (): SkillLevel => ({ description: "", cost: [] });
 const emptySkill = (
   skillType: SkillType = "ability",
@@ -680,10 +703,14 @@ function EnergyActionsEditor({
             <select
               className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
               value={generate.trigger ?? "on-use"}
-              onChange={(e) => onChangeGenerate({ ...generate, trigger: e.target.value === "on-use" ? undefined : "on-attack-hit" })}
+              onChange={(e) => {
+                const val = e.target.value;
+                onChangeGenerate({ ...generate, trigger: val === "on-use" ? undefined : val as EffectTrigger });
+              }}
             >
               <option value="on-use">On Use</option>
               <option value="on-attack-hit">On Hit</option>
+              <option value="round-start">Round Start</option>
             </select>
           </>
         )}
@@ -1136,7 +1163,7 @@ export function SkillForm({
                   : `Level ${i + 1} description...`
               }
             />
-            {/* Damage metadata */}
+            {/* Core: flags + cost */}
             <div className="flex gap-2 items-center flex-wrap">
               <label className="flex items-center gap-1 cursor-pointer">
                 <input
@@ -1156,222 +1183,288 @@ export function SkillForm({
                 />
                 <span className="text-[10px] text-cyan-400 font-medium">While Equipped</span>
               </label>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Dmg Type:</span>
-                <select
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                  value={level.damageCategory ?? ""}
-                  onChange={(e) => updateLevel(i, { damageCategory: (e.target.value || undefined) as SkillLevel["damageCategory"] })}
+              {level.passive && (
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!level.activeWhileDefeated}
+                    onChange={(e) => updateLevel(i, { activeWhileDefeated: e.target.checked || undefined })}
+                    className="rounded bg-gray-800 border-gray-700 text-red-600 focus:ring-red-500 w-3 h-3"
+                  />
+                  <span className="text-[10px] text-red-400 font-medium">Active While Defeated</span>
+                </label>
+              )}
+            </div>
+            {/* Cost */}
+            <div className="flex gap-1 items-center flex-wrap">
+              <span className="text-xs text-gray-500 mr-1">Add cost:</span>
+              {ENERGY_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => addCost(i, color)}
+                  className="px-2 py-0.5 rounded text-xs text-white capitalize hover:opacity-80"
+                  style={{ backgroundColor: ENERGY_HEX[color] }}
                 >
-                  <option value="">None</option>
-                  {DAMAGE_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{DAMAGE_CATEGORY_LABELS[c]}</option>
+                  +{color}
+                </button>
+              ))}
+              {level.cost.length > 0 && (
+                <>
+                  <span className="text-xs text-gray-500 ml-2 mr-1">Remove:</span>
+                  {level.cost.map((c) => (
+                    <button
+                      key={c.color}
+                      onClick={() => removeCost(i, c.color)}
+                      className="px-2 py-0.5 rounded text-xs text-white capitalize opacity-60 hover:opacity-100"
+                      style={{ backgroundColor: ENERGY_HEX[c.color] }}
+                    >
+                      -{c.color}
+                    </button>
                   ))}
-                </select>
-              </div>
-              {level.damageCategory && (
+                </>
+              )}
+            </div>
+            <input
+              className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none focus:border-gray-500"
+              value={level.costNote ?? ""}
+              onChange={(e) => updateLevel(i, { costNote: e.target.value || undefined })}
+              placeholder="Cost note (e.g. 'Repeat for each additional energy spent')"
+            />
+
+            {/* --- DAMAGE & TARGETING --- */}
+            <CollapsibleSection
+              title="Damage & Targeting"
+              hasContent={!!(level.damageCategory || level.targetType)}
+            >
+              <div className="flex gap-2 items-center flex-wrap">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">Tier:</span>
+                  <span className="text-[10px] text-gray-500">Dmg Type:</span>
                   <select
                     className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                    value={level.damageTier ?? "moderate"}
-                    onChange={(e) => updateLevel(i, { damageTier: e.target.value })}
+                    value={level.damageCategory ?? ""}
+                    onChange={(e) => updateLevel(i, { damageCategory: (e.target.value || undefined) as SkillLevel["damageCategory"] })}
                   >
-                    {DAMAGE_TIERS.map((t) => (
-                      <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
+                    <option value="">None</option>
+                    {DAMAGE_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{DAMAGE_CATEGORY_LABELS[c]}</option>
                     ))}
                   </select>
                 </div>
-              )}
-              {level.damageCategory && level.damageTier === "random" && (
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-[10px] text-gray-500">Pool:</span>
-                  {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => {
-                    const pool = level.randomTierPool ?? [];
-                    const checked = pool.includes(t);
-                    return (
-                      <label key={t} className="flex items-center gap-0.5 text-[10px] text-gray-300">
+                {level.damageCategory && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Tier:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                      value={level.damageTier ?? "moderate"}
+                      onChange={(e) => updateLevel(i, { damageTier: e.target.value })}
+                    >
+                      {DAMAGE_TIERS.map((t) => (
+                        <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {level.damageCategory && level.damageTier === "random" && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] text-gray-500">Pool:</span>
+                    {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => {
+                      const pool = level.randomTierPool ?? [];
+                      const checked = pool.includes(t);
+                      return (
+                        <label key={t} className="flex items-center gap-0.5 text-[10px] text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...pool, t]
+                                : pool.filter((x) => x !== t);
+                              updateLevel(i, { randomTierPool: next.length > 0 ? next : undefined });
+                            }}
+                          />
+                          {DAMAGE_TIER_LABELS[t]}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {level.damageCategory && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                      <input
+                        type="checkbox"
+                        checked={!!level.variableRepeat}
+                        onChange={(e) => updateLevel(i, { variableRepeat: e.target.checked ? { color: "red", max: 5 } : undefined })}
+                      />
+                      Variable Repeat
+                    </label>
+                    {level.variableRepeat && (
+                      <>
+                        <select
+                          className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                          value={level.variableRepeat.color}
+                          onChange={(e) => updateLevel(i, { variableRepeat: { ...level.variableRepeat!, color: e.target.value as EnergyColor | "any" } })}
+                        >
+                          <option value="any">any</option>
+                          {ENERGY_COLORS.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                        <span className="text-[10px] text-gray-500">max</span>
                         <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const next = e.target.checked
-                              ? [...pool, t]
-                              : pool.filter((x) => x !== t);
-                            updateLevel(i, { randomTierPool: next.length > 0 ? next : undefined });
-                          }}
+                          type="number"
+                          min={1}
+                          max={10}
+                          className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-12"
+                          value={level.variableRepeat.max}
+                          onChange={(e) => updateLevel(i, { variableRepeat: { ...level.variableRepeat!, max: Math.max(1, Math.min(10, parseInt(e.target.value) || 1)) } })}
                         />
-                        {DAMAGE_TIER_LABELS[t]}
-                      </label>
+                      </>
+                    )}
+                  </div>
+                )}
+                {level.damageCategory && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Source:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                      value={level.damageSourceOverride ?? ""}
+                      onChange={(e) => updateLevel(i, { damageSourceOverride: (e.target.value || undefined) as SkillLevel["damageSourceOverride"] })}
+                      title="Override how this skill is classified for cover/source-resistance interactions"
+                    >
+                      <option value="">Auto (from target)</option>
+                      <option value="direct">Direct</option>
+                      <option value="aoe">AOE</option>
+                      <option value="indirect">Indirect</option>
+                    </select>
+                  </div>
+                )}
+                {level.damageCategory && level.damageCategory !== "healing" && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Element:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                      value={level.element ?? ""}
+                      onChange={(e) => updateLevel(i, { element: (e.target.value || undefined) as SkillLevel["element"] })}
+                    >
+                      <option value="">None</option>
+                      {ELEMENTS.map((el) => (
+                        <option key={el} value={el}>{ELEMENT_ICONS[el]} {ELEMENT_LABELS[el]}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {level.damageCategory === "physical" && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Ignore DEF:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                      value={level.ignoreDefense ?? 0}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                        updateLevel(i, { ignoreDefense: v || undefined });
+                      }}
+                    />
+                    <span className="text-[10px] text-gray-500">%</span>
+                  </div>
+                )}
+                {level.damageCategory === "magical" && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Ignore SPI:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                      value={level.ignoreSpirit ?? 0}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                        updateLevel(i, { ignoreSpirit: v || undefined });
+                      }}
+                    />
+                    <span className="text-[10px] text-gray-500">%</span>
+                  </div>
+                )}
+                <label className="flex items-center gap-1 cursor-pointer" title="Bypass the back-row defender's -20% damage taken modifier (anti-back-row sniping)">
+                  <input
+                    type="checkbox"
+                    checked={!!level.ignoreRowDefense}
+                    onChange={(e) => updateLevel(i, { ignoreRowDefense: e.target.checked || undefined })}
+                  />
+                  <span className="text-[10px] text-gray-500">Ignore Row DEF</span>
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer" title="This skill bypasses miss-chance, dodge-chance, and cover redirect">
+                  <input
+                    type="checkbox"
+                    checked={!!level.guaranteedHit}
+                    onChange={(e) => updateLevel(i, { guaranteedHit: e.target.checked || undefined })}
+                  />
+                  <span className="text-[10px] text-gray-500">Guaranteed Hit</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-red-400">HP Cost:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                    value={level.hpCost ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+                      updateLevel(i, { hpCost: v || undefined });
+                    }}
+                  />
+                  <span className="text-[10px] text-gray-500">% max HP</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Target:</span>
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                    value={level.targetType ?? ""}
+                    onChange={(e) => updateLevel(i, { targetType: (e.target.value || undefined) as SkillLevel["targetType"] })}
+                  >
+                    <option value="">None</option>
+                    {TARGET_TYPES.map((t) => (
+                      <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Range:</span>
+                  {(["melee", "ranged", "magic"] as const).map((tag) => {
+                    const active = level.rangeTags?.includes(tag) ?? false;
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => {
+                          const cur = level.rangeTags ?? [];
+                          const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag];
+                          updateLevel(i, { rangeTags: next.length > 0 ? next : undefined });
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize ${
+                          active
+                            ? tag === "melee" ? "bg-orange-700/40 border-orange-500/60 text-orange-200"
+                            : tag === "ranged" ? "bg-cyan-700/40 border-cyan-500/60 text-cyan-200"
+                            : "bg-purple-700/40 border-purple-500/60 text-purple-200"
+                            : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300"
+                        }`}
+                      >
+                        {tag === "melee" ? "⚔" : tag === "ranged" ? "🏹" : "✨"} {tag}
+                      </button>
                     );
                   })}
                 </div>
-              )}
-              {level.damageCategory && (
-                <div className="flex items-center gap-1 flex-wrap">
-                  <label className="flex items-center gap-1 text-[10px] text-gray-400">
-                    <input
-                      type="checkbox"
-                      checked={!!level.variableRepeat}
-                      onChange={(e) => updateLevel(i, { variableRepeat: e.target.checked ? { color: "red", max: 5 } : undefined })}
-                    />
-                    Variable Repeat
-                  </label>
-                  {level.variableRepeat && (
-                    <>
-                      <select
-                        className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                        value={level.variableRepeat.color}
-                        onChange={(e) => updateLevel(i, { variableRepeat: { ...level.variableRepeat!, color: e.target.value as EnergyColor | "any" } })}
-                      >
-                        <option value="any">any</option>
-                        {ENERGY_COLORS.map((c) => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-                      <span className="text-[10px] text-gray-500">max</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-12"
-                        value={level.variableRepeat.max}
-                        onChange={(e) => updateLevel(i, { variableRepeat: { ...level.variableRepeat!, max: Math.max(1, Math.min(10, parseInt(e.target.value) || 1)) } })}
-                      />
-                    </>
-                  )}
-                </div>
-              )}
-              {level.damageCategory && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">Source:</span>
-                  <select
-                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                    value={level.damageSourceOverride ?? ""}
-                    onChange={(e) => updateLevel(i, { damageSourceOverride: (e.target.value || undefined) as SkillLevel["damageSourceOverride"] })}
-                    title="Override how this skill is classified for cover/source-resistance interactions"
-                  >
-                    <option value="">Auto (from target)</option>
-                    <option value="direct">Direct</option>
-                    <option value="aoe">AOE</option>
-                    <option value="indirect">Indirect</option>
-                  </select>
-                </div>
-              )}
-              {level.damageCategory && level.damageCategory !== "healing" && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">Element:</span>
-                  <select
-                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                    value={level.element ?? ""}
-                    onChange={(e) => updateLevel(i, { element: (e.target.value || undefined) as SkillLevel["element"] })}
-                  >
-                    <option value="">None</option>
-                    {ELEMENTS.map((el) => (
-                      <option key={el} value={el}>{ELEMENT_ICONS[el]} {ELEMENT_LABELS[el]}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {level.damageCategory === "physical" && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">Ignore DEF:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
-                    value={level.ignoreDefense ?? 0}
-                    onChange={(e) => {
-                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                      updateLevel(i, { ignoreDefense: v || undefined });
-                    }}
-                  />
-                  <span className="text-[10px] text-gray-500">%</span>
-                </div>
-              )}
-              {level.damageCategory === "magical" && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">Ignore SPI:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
-                    value={level.ignoreSpirit ?? 0}
-                    onChange={(e) => {
-                      const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                      updateLevel(i, { ignoreSpirit: v || undefined });
-                    }}
-                  />
-                  <span className="text-[10px] text-gray-500">%</span>
-                </div>
-              )}
-              <label className="flex items-center gap-1 cursor-pointer" title="Bypass the back-row defender's -20% damage taken modifier (anti-back-row sniping)">
-                <input
-                  type="checkbox"
-                  checked={!!level.ignoreRowDefense}
-                  onChange={(e) => updateLevel(i, { ignoreRowDefense: e.target.checked || undefined })}
-                />
-                <span className="text-[10px] text-gray-500">Ignore Row DEF</span>
-              </label>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-red-400">HP Cost:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
-                  value={level.hpCost ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                    updateLevel(i, { hpCost: v || undefined });
-                  }}
-                />
-                <span className="text-[10px] text-gray-500">% max HP</span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Target:</span>
-                <select
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                  value={level.targetType ?? ""}
-                  onChange={(e) => updateLevel(i, { targetType: (e.target.value || undefined) as SkillLevel["targetType"] })}
-                >
-                  <option value="">None</option>
-                  {TARGET_TYPES.map((t) => (
-                    <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Range tags */}
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Range:</span>
-                {(["melee", "ranged", "magic"] as const).map((tag) => {
-                  const active = level.rangeTags?.includes(tag) ?? false;
-                  return (
-                    <button
-                      key={tag}
-                      onClick={() => {
-                        const cur = level.rangeTags ?? [];
-                        const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag];
-                        updateLevel(i, { rangeTags: next.length > 0 ? next : undefined });
-                      }}
-                      className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize ${
-                        active
-                          ? tag === "melee" ? "bg-orange-700/40 border-orange-500/60 text-orange-200"
-                          : tag === "ranged" ? "bg-cyan-700/40 border-cyan-500/60 text-cyan-200"
-                          : "bg-purple-700/40 border-purple-500/60 text-purple-200"
-                          : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300"
-                      }`}
-                    >
-                      {tag === "melee" ? "⚔" : tag === "ranged" ? "🏹" : "✨"} {tag}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            </CollapsibleSection>
 
-            {level.damageCategory && (
+            {/* --- DAMAGE RIDERS --- */}
+            <CollapsibleSection
+              title="Damage Riders"
+              hasContent={!!(level.casterMissingHpScaling || level.giantSlayerMaxBonus || level.executeBonus || level.bonusHpDamage || level.splashHit || level.bonusDamageVsStatus || level.stolenEnergyScaling || level.consumesCasterImbue || level.requiresAnyStatus?.length)}
+            >
               <div className="flex gap-2 items-center flex-wrap">
                 <span className="text-[10px] text-gray-500">HP Scaling:</span>
                 <label className="flex items-center gap-1 text-[10px] text-gray-400">
@@ -1456,100 +1549,16 @@ export function SkillForm({
                     <option value="current">Current HP</option>
                   </select>
                 </label>
-                <div className="flex items-center gap-1 text-[10px] text-gray-400 flex-wrap">
-                  <label className="flex items-center gap-1" title="Strip any imbue-tagged buffs from the caster after this skill's damage lands">
-                    <input
-                      type="checkbox"
-                      checked={!!level.consumesCasterImbue}
-                      onChange={(e) => updateLevel(i, { consumesCasterImbue: e.target.checked || undefined })}
-                    />
-                    Consume caster imbue
-                  </label>
-                </div>
-                <div className="flex items-start gap-1 text-[10px] text-gray-400 flex-wrap">
-                  <span className="text-gray-500" title="Skill is disabled in the action bar unless the caster has at least one of these statuses active">Requires any of:</span>
-                  <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-                    {statusEffects.map((se) => {
-                      const list = level.requiresAnyStatus ?? [];
-                      const checked = list.includes(se.id);
-                      return (
-                        <label key={se.id} className={`flex items-center gap-0.5 px-1 py-0.5 rounded border ${checked ? "border-emerald-500/60 bg-emerald-900/30" : "border-gray-700 bg-gray-800"}`}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              const next = e.target.checked
-                                ? [...list, se.id]
-                                : list.filter((x) => x !== se.id);
-                              updateLevel(i, { requiresAnyStatus: next.length > 0 ? next : undefined });
-                            }}
-                          />
-                          {se.name}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-[10px] text-gray-400 flex-wrap">
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={!!level.splashHit}
-                      onChange={(e) => updateLevel(i, { splashHit: e.target.checked
-                        ? { damageTier: "minor", damageCategory: "true", damageSourceOverride: "indirect", targetPattern: "adjacent-of-target", inheritElement: true }
-                        : undefined })}
-                    />
-                    Splash
-                  </label>
-                  {level.splashHit && (
-                    <>
-                      <select
-                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
-                        value={level.splashHit.targetPattern}
-                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, targetPattern: e.target.value as "adjacent-of-target" | "all-other-enemies" | "row-behind-target" } })}
-                      >
-                        <option value="adjacent-of-target">Adjacent of target</option>
-                        <option value="all-other-enemies">All other enemies</option>
-                        <option value="row-behind-target">Row behind target</option>
-                      </select>
-                      <select
-                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
-                        value={level.splashHit.damageTier}
-                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageTier: e.target.value } })}
-                      >
-                        {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => (
-                          <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
-                        ))}
-                      </select>
-                      <select
-                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
-                        value={level.splashHit.damageCategory}
-                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageCategory: e.target.value as "physical" | "magical" | "true" } })}
-                      >
-                        <option value="physical">Physical</option>
-                        <option value="magical">Magical</option>
-                        <option value="true">True</option>
-                      </select>
-                      <select
-                        className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
-                        value={level.splashHit.damageSourceOverride ?? "indirect"}
-                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageSourceOverride: e.target.value as "direct" | "aoe" | "indirect" } })}
-                      >
-                        <option value="direct">Direct</option>
-                        <option value="aoe">AOE</option>
-                        <option value="indirect">Indirect</option>
-                      </select>
-                      <label className="flex items-center gap-0.5">
-                        <input
-                          type="checkbox"
-                          checked={level.splashHit.inheritElement ?? true}
-                          onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, inheritElement: e.target.checked } })}
-                        />
-                        Inherit element
-                      </label>
-                    </>
-                  )}
-                </div>
+              </div>
+              <div className="flex gap-2 items-center flex-wrap">
+                <label className="flex items-center gap-1 text-[10px] text-gray-400" title="Strip any imbue-tagged buffs from the caster after this skill's damage lands">
+                  <input
+                    type="checkbox"
+                    checked={!!level.consumesCasterImbue}
+                    onChange={(e) => updateLevel(i, { consumesCasterImbue: e.target.checked || undefined })}
+                  />
+                  Consume caster imbue
+                </label>
                 <label className="flex items-center gap-1 text-[10px] text-gray-400">
                   Bonus vs status:
                   <select
@@ -1564,7 +1573,7 @@ export function SkillForm({
                       }
                     }}
                   >
-                    <option value="">— None —</option>
+                    <option value="">-- None --</option>
                     {statusEffects.map((se) => (
                       <option key={se.id} value={se.id}>{se.name}</option>
                     ))}
@@ -1622,102 +1631,167 @@ export function SkillForm({
                   </label>
                 </label>
               </div>
-            )}
-
-            <div className="flex gap-1 items-center flex-wrap">
-              <span className="text-xs text-gray-500 mr-1">Add cost:</span>
-              {ENERGY_COLORS.map((color) => (
-                <button
-                  key={color}
-                  onClick={() => addCost(i, color)}
-                  className="px-2 py-0.5 rounded text-xs text-white capitalize hover:opacity-80"
-                  style={{ backgroundColor: ENERGY_HEX[color] }}
-                >
-                  +{color}
-                </button>
-              ))}
-              {level.cost.length > 0 && (
-                <>
-                  <span className="text-xs text-gray-500 ml-2 mr-1">Remove:</span>
-                  {level.cost.map((c) => (
-                    <button
-                      key={c.color}
-                      onClick={() => removeCost(i, c.color)}
-                      className="px-2 py-0.5 rounded text-xs text-white capitalize opacity-60 hover:opacity-100"
-                      style={{ backgroundColor: ENERGY_HEX[c.color] }}
+              <div className="flex items-center gap-1 text-[10px] text-gray-400 flex-wrap">
+                <label className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={!!level.splashHit}
+                    onChange={(e) => updateLevel(i, { splashHit: e.target.checked
+                      ? { damageTier: "minor", damageCategory: "true", damageSourceOverride: "indirect", targetPattern: "adjacent-of-target", inheritElement: true }
+                      : undefined })}
+                  />
+                  Splash
+                </label>
+                {level.splashHit && (
+                  <>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                      value={level.splashHit.targetPattern}
+                      onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, targetPattern: e.target.value as "adjacent-of-target" | "all-other-enemies" | "row-behind-target" } })}
                     >
-                      -{c.color}
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-            {/* Cost note for variable costs */}
-            <input
-              className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none focus:border-gray-500"
-              value={level.costNote ?? ""}
-              onChange={(e) => updateLevel(i, { costNote: e.target.value || undefined })}
-              placeholder="Cost note (e.g. 'Repeat for each additional energy spent')"
-            />
-            {/* Effects (buff/debuff applications) */}
-            <EffectsEditor
-              effects={level.effects ?? []}
-              statusEffects={statusEffects}
-              onChange={(effects) => updateLevel(i, { effects: effects.length > 0 ? effects : undefined })}
-            />
-            <RandomEffectPoolsEditor
-              pools={level.randomEffectPools ?? []}
-              statusEffects={statusEffects}
-              onChange={(pools) => updateLevel(i, { randomEffectPools: pools.length > 0 ? pools : undefined })}
-            />
-            <RandomEffectPoolsEditor
-              mode="choose"
-              pools={level.chooseEffectPools ?? []}
-              statusEffects={statusEffects}
-              onChange={(pools) => updateLevel(i, { chooseEffectPools: pools.length > 0 ? pools : undefined })}
-            />
-            <RandomEffectPoolsEditor
-              mode="cycle"
-              pools={level.cycleEffectPools ?? []}
-              statusEffects={statusEffects}
-              onChange={(pools) => updateLevel(i, { cycleEffectPools: pools.length > 0 ? pools : undefined })}
-            />
-            {/* Resistance grants (for passive skills) */}
-            <ResistanceGrantsEditor
-              grants={level.resistanceGrants ?? []}
-              statusEffects={statusEffects}
-              onChange={(grants) => updateLevel(i, { resistanceGrants: grants.length > 0 ? grants : undefined })}
-            />
-            {/* Dispels */}
-            <DispelsEditor
-              dispels={level.dispels ?? []}
-              onChange={(dispels) => updateLevel(i, { dispels: dispels.length > 0 ? dispels : undefined })}
-            />
-            <MovementsEditor
-              movements={level.movements ?? []}
-              onChange={(movements) => updateLevel(i, { movements: movements.length > 0 ? movements : undefined })}
-            />
-            <EnergyActionsEditor
-              steal={level.energySteal}
-              generate={level.energyGenerate}
-              onChangeSteal={(es) => updateLevel(i, { energySteal: es })}
-              onChangeGenerate={(eg) => updateLevel(i, { energyGenerate: eg })}
-            />
-            {/* Per-level template link */}
-            {isAbility && templates && templates.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-500 shrink-0">Template:</span>
-                <select
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-gray-500"
-                  value={level.templateId ?? ""}
-                  onChange={(e) => updateLevel(i, { templateId: e.target.value || null })}
-                >
-                  <option value="">None</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                      <option value="adjacent-of-target">Adjacent of target</option>
+                      <option value="all-other-enemies">All other enemies</option>
+                      <option value="row-behind-target">Row behind target</option>
+                    </select>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                      value={level.splashHit.damageTier}
+                      onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageTier: e.target.value } })}
+                    >
+                      {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => (
+                        <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                      value={level.splashHit.damageCategory}
+                      onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageCategory: e.target.value as "physical" | "magical" | "true" } })}
+                    >
+                      <option value="physical">Physical</option>
+                      <option value="magical">Magical</option>
+                      <option value="true">True</option>
+                    </select>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px]"
+                      value={level.splashHit.damageSourceOverride ?? "indirect"}
+                      onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, damageSourceOverride: e.target.value as "direct" | "aoe" | "indirect" } })}
+                    >
+                      <option value="direct">Direct</option>
+                      <option value="aoe">AOE</option>
+                      <option value="indirect">Indirect</option>
+                    </select>
+                    <label className="flex items-center gap-0.5">
+                      <input
+                        type="checkbox"
+                        checked={level.splashHit.inheritElement ?? true}
+                        onChange={(e) => updateLevel(i, { splashHit: { ...level.splashHit!, inheritElement: e.target.checked } })}
+                      />
+                      Inherit element
+                    </label>
+                  </>
+                )}
               </div>
+              <div className="flex items-start gap-1 text-[10px] text-gray-400 flex-wrap">
+                <span className="text-gray-500" title="Skill is disabled in the action bar unless the caster has at least one of these statuses active">Requires any of:</span>
+                <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                  {statusEffects.map((se) => {
+                    const list = level.requiresAnyStatus ?? [];
+                    const checked = list.includes(se.id);
+                    return (
+                      <label key={se.id} className={`flex items-center gap-0.5 px-1 py-0.5 rounded border ${checked ? "border-emerald-500/60 bg-emerald-900/30" : "border-gray-700 bg-gray-800"}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...list, se.id]
+                              : list.filter((x) => x !== se.id);
+                            updateLevel(i, { requiresAnyStatus: next.length > 0 ? next : undefined });
+                          }}
+                        />
+                        {se.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* --- EFFECTS --- */}
+            <CollapsibleSection
+              title="Effects"
+              hasContent={!!(level.effects?.length || level.randomEffectPools?.length || level.chooseEffectPools?.length || level.cycleEffectPools?.length || level.resistanceGrants?.length)}
+            >
+              <EffectsEditor
+                effects={level.effects ?? []}
+                statusEffects={statusEffects}
+                onChange={(effects) => updateLevel(i, { effects: effects.length > 0 ? effects : undefined })}
+              />
+              <RandomEffectPoolsEditor
+                pools={level.randomEffectPools ?? []}
+                statusEffects={statusEffects}
+                onChange={(pools) => updateLevel(i, { randomEffectPools: pools.length > 0 ? pools : undefined })}
+              />
+              <RandomEffectPoolsEditor
+                mode="choose"
+                pools={level.chooseEffectPools ?? []}
+                statusEffects={statusEffects}
+                onChange={(pools) => updateLevel(i, { chooseEffectPools: pools.length > 0 ? pools : undefined })}
+              />
+              <RandomEffectPoolsEditor
+                mode="cycle"
+                pools={level.cycleEffectPools ?? []}
+                statusEffects={statusEffects}
+                onChange={(pools) => updateLevel(i, { cycleEffectPools: pools.length > 0 ? pools : undefined })}
+              />
+              <ResistanceGrantsEditor
+                grants={level.resistanceGrants ?? []}
+                statusEffects={statusEffects}
+                onChange={(grants) => updateLevel(i, { resistanceGrants: grants.length > 0 ? grants : undefined })}
+              />
+            </CollapsibleSection>
+
+            {/* --- ACTIONS --- */}
+            <CollapsibleSection
+              title="Actions"
+              hasContent={!!(level.dispels?.length || level.movements?.length || level.energySteal || level.energyGenerate)}
+            >
+              <DispelsEditor
+                dispels={level.dispels ?? []}
+                onChange={(dispels) => updateLevel(i, { dispels: dispels.length > 0 ? dispels : undefined })}
+              />
+              <MovementsEditor
+                movements={level.movements ?? []}
+                onChange={(movements) => updateLevel(i, { movements: movements.length > 0 ? movements : undefined })}
+              />
+              <EnergyActionsEditor
+                steal={level.energySteal}
+                generate={level.energyGenerate}
+                onChangeSteal={(es) => updateLevel(i, { energySteal: es })}
+                onChangeGenerate={(eg) => updateLevel(i, { energyGenerate: eg })}
+              />
+            </CollapsibleSection>
+
+            {/* --- TEMPLATE --- */}
+            {isAbility && templates && templates.length > 0 && (
+              <CollapsibleSection
+                title="Template"
+                hasContent={!!level.templateId}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 shrink-0">Template:</span>
+                  <select
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-gray-500"
+                    value={level.templateId ?? ""}
+                    onChange={(e) => updateLevel(i, { templateId: e.target.value || null })}
+                  >
+                    <option value="">None</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </CollapsibleSection>
             )}
           </div>
         ))
@@ -1732,7 +1806,7 @@ export function SkillForm({
             onChange={(e) => updateLevel(0, { description: e.target.value })}
             placeholder={`What does this ${form.skillType} do?`}
           />
-          {/* Damage & targeting for basic/innate */}
+          {/* Core: flags */}
           <div className="flex gap-2 items-center flex-wrap">
             <label className="flex items-center gap-1 cursor-pointer">
               <input
@@ -1752,266 +1826,199 @@ export function SkillForm({
               />
               <span className="text-[10px] text-cyan-400 font-medium">While Equipped</span>
             </label>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-gray-500">Dmg Type:</span>
-              <select
-                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                value={form.levels[0].damageCategory ?? ""}
-                onChange={(e) => updateLevel(0, { damageCategory: (e.target.value || undefined) as SkillLevel["damageCategory"] })}
-              >
-                <option value="">None</option>
-                {DAMAGE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{DAMAGE_CATEGORY_LABELS[c]}</option>
-                ))}
-              </select>
-            </div>
-            {form.levels[0].damageCategory && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Tier:</span>
-                <select
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                  value={form.levels[0].damageTier ?? "moderate"}
-                  onChange={(e) => updateLevel(0, { damageTier: e.target.value })}
-                >
-                  {DAMAGE_TIERS.map((t) => (
-                    <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
-                  ))}
-                </select>
-              </div>
+            {form.levels[0].passive && (
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!form.levels[0].activeWhileDefeated}
+                  onChange={(e) => updateLevel(0, { activeWhileDefeated: e.target.checked || undefined })}
+                  className="rounded bg-gray-800 border-gray-700 text-red-600 focus:ring-red-500 w-3 h-3"
+                />
+                <span className="text-[10px] text-red-400 font-medium">Active While Defeated</span>
+              </label>
             )}
-            {form.levels[0].damageCategory && form.levels[0].damageCategory !== "healing" && (
+          </div>
+
+          {/* --- DAMAGE & TARGETING --- */}
+          <CollapsibleSection
+            title="Damage & Targeting"
+            hasContent={!!(form.levels[0].damageCategory || form.levels[0].targetType)}
+          >
+            <div className="flex gap-2 items-center flex-wrap">
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Element:</span>
+                <span className="text-[10px] text-gray-500">Dmg Type:</span>
                 <select
                   className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                  value={form.levels[0].element ?? ""}
-                  onChange={(e) => updateLevel(0, { element: (e.target.value || undefined) as SkillLevel["element"] })}
+                  value={form.levels[0].damageCategory ?? ""}
+                  onChange={(e) => updateLevel(0, { damageCategory: (e.target.value || undefined) as SkillLevel["damageCategory"] })}
                 >
                   <option value="">None</option>
-                  {ELEMENTS.map((el) => (
-                    <option key={el} value={el}>{ELEMENT_ICONS[el]} {ELEMENT_LABELS[el]}</option>
+                  {DAMAGE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{DAMAGE_CATEGORY_LABELS[c]}</option>
                   ))}
                 </select>
               </div>
-            )}
-            {form.levels[0].damageCategory === "physical" && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Ignore DEF:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
-                  value={form.levels[0].ignoreDefense ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                    updateLevel(0, { ignoreDefense: v || undefined });
-                  }}
-                />
-                <span className="text-[10px] text-gray-500">%</span>
-              </div>
-            )}
-            {form.levels[0].damageCategory === "magical" && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500">Ignore SPI:</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
-                  value={form.levels[0].ignoreSpirit ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                    updateLevel(0, { ignoreSpirit: v || undefined });
-                  }}
-                />
-                <span className="text-[10px] text-gray-500">%</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-red-400">HP Cost:</span>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
-                value={form.levels[0].hpCost ?? 0}
-                onChange={(e) => {
-                  const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                  updateLevel(0, { hpCost: v || undefined });
-                }}
-              />
-              <span className="text-[10px] text-gray-500">% max HP</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-gray-500">Target:</span>
-              <select
-                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
-                value={form.levels[0].targetType ?? ""}
-                onChange={(e) => updateLevel(0, { targetType: (e.target.value || undefined) as SkillLevel["targetType"] })}
-              >
-                <option value="">None</option>
-                {TARGET_TYPES.map((t) => (
-                  <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-gray-500">Range:</span>
-              {(["melee", "ranged", "magic"] as const).map((tag) => {
-                const active = form.levels[0].rangeTags?.includes(tag) ?? false;
-                return (
-                  <button
-                    key={tag}
-                    onClick={() => {
-                      const cur = form.levels[0].rangeTags ?? [];
-                      const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag];
-                      updateLevel(0, { rangeTags: next.length > 0 ? next : undefined });
-                    }}
-                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize ${
-                      active
-                        ? tag === "melee" ? "bg-orange-700/40 border-orange-500/60 text-orange-200"
-                        : tag === "ranged" ? "bg-cyan-700/40 border-cyan-500/60 text-cyan-200"
-                        : "bg-purple-700/40 border-purple-500/60 text-purple-200"
-                        : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300"
-                    }`}
+              {form.levels[0].damageCategory && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Tier:</span>
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                    value={form.levels[0].damageTier ?? "moderate"}
+                    onChange={(e) => updateLevel(0, { damageTier: e.target.value })}
                   >
-                    {tag === "melee" ? "⚔" : tag === "ranged" ? "🏹" : "✨"} {tag}
-                  </button>
-                );
-              })}
+                    {DAMAGE_TIERS.map((t) => (
+                      <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {form.levels[0].damageCategory && form.levels[0].damageCategory !== "healing" && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Element:</span>
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                    value={form.levels[0].element ?? ""}
+                    onChange={(e) => updateLevel(0, { element: (e.target.value || undefined) as SkillLevel["element"] })}
+                  >
+                    <option value="">None</option>
+                    {ELEMENTS.map((el) => (
+                      <option key={el} value={el}>{ELEMENT_ICONS[el]} {ELEMENT_LABELS[el]}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {form.levels[0].damageCategory === "physical" && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Ignore DEF:</span>
+                  <input type="number" min={0} max={100} className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14" value={form.levels[0].ignoreDefense ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0)); updateLevel(0, { ignoreDefense: v || undefined }); }} />
+                  <span className="text-[10px] text-gray-500">%</span>
+                </div>
+              )}
+              {form.levels[0].damageCategory === "magical" && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Ignore SPI:</span>
+                  <input type="number" min={0} max={100} className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14" value={form.levels[0].ignoreSpirit ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0)); updateLevel(0, { ignoreSpirit: v || undefined }); }} />
+                  <span className="text-[10px] text-gray-500">%</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-red-400">HP Cost:</span>
+                <input type="number" min={0} max={100} className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14" value={form.levels[0].hpCost ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0)); updateLevel(0, { hpCost: v || undefined }); }} />
+                <span className="text-[10px] text-gray-500">% max HP</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-500">Target:</span>
+                <select className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500" value={form.levels[0].targetType ?? ""} onChange={(e) => updateLevel(0, { targetType: (e.target.value || undefined) as SkillLevel["targetType"] })}>
+                  <option value="">None</option>
+                  {TARGET_TYPES.map((t) => (
+                    <option key={t} value={t}>{TARGET_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-gray-500">Range:</span>
+                {(["melee", "ranged", "magic"] as const).map((tag) => {
+                  const active = form.levels[0].rangeTags?.includes(tag) ?? false;
+                  return (
+                    <button key={tag} onClick={() => { const cur = form.levels[0].rangeTags ?? []; const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]; updateLevel(0, { rangeTags: next.length > 0 ? next : undefined }); }} className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors capitalize ${active ? tag === "melee" ? "bg-orange-700/40 border-orange-500/60 text-orange-200" : tag === "ranged" ? "bg-cyan-700/40 border-cyan-500/60 text-cyan-200" : "bg-purple-700/40 border-purple-500/60 text-purple-200" : "bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300"}`}>
+                      {tag === "melee" ? "⚔" : tag === "ranged" ? "🏹" : "✨"} {tag}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          {form.levels[0].damageCategory && (
+          </CollapsibleSection>
+
+          {/* --- DAMAGE RIDERS --- */}
+          <CollapsibleSection
+            title="Damage Riders"
+            hasContent={!!(form.levels[0].casterMissingHpScaling || form.levels[0].giantSlayerMaxBonus || form.levels[0].executeBonus || form.levels[0].bonusHpDamage)}
+          >
             <div className="flex gap-2 items-center flex-wrap">
               <span className="text-[10px] text-gray-500">HP Scaling:</span>
               <label className="flex items-center gap-1 text-[10px] text-gray-400">
                 Caster Missing HP cap:
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                  value={form.levels[0].casterMissingHpScaling ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                    updateLevel(0, { casterMissingHpScaling: v || undefined });
-                  }}
-                />
+                <input type="number" min={0} max={100} className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none" value={form.levels[0].casterMissingHpScaling ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0)); updateLevel(0, { casterMissingHpScaling: v || undefined }); }} />
                 %
               </label>
               <label className="flex items-center gap-1 text-[10px] text-gray-400">
                 Giant Slayer max:
-                <input
-                  type="number"
-                  min={0}
-                  max={500}
-                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                  value={form.levels[0].giantSlayerMaxBonus ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
-                    updateLevel(0, { giantSlayerMaxBonus: v || undefined });
-                  }}
-                />
+                <input type="number" min={0} max={500} className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none" value={form.levels[0].giantSlayerMaxBonus ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0)); updateLevel(0, { giantSlayerMaxBonus: v || undefined }); }} />
                 %
               </label>
               <label className="flex items-center gap-1 text-[10px] text-gray-400">
                 Execute:
-                <input
-                  type="number"
-                  min={0}
-                  max={500}
-                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                  value={form.levels[0].executeBonus?.maxBonus ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0));
-                    updateLevel(0, { executeBonus: v > 0 ? { threshold: form.levels[0].executeBonus?.threshold ?? 25, maxBonus: v } : undefined });
-                  }}
-                />
+                <input type="number" min={0} max={500} className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none" value={form.levels[0].executeBonus?.maxBonus ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(500, parseInt(e.target.value) || 0)); updateLevel(0, { executeBonus: v > 0 ? { threshold: form.levels[0].executeBonus?.threshold ?? 25, maxBonus: v } : undefined }); }} />
                 % at HP ≤
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  className="w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                  value={form.levels[0].executeBonus?.threshold ?? 25}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.min(99, parseInt(e.target.value) || 25));
-                    if (form.levels[0].executeBonus) updateLevel(0, { executeBonus: { ...form.levels[0].executeBonus, threshold: v } });
-                  }}
-                />
+                <input type="number" min={1} max={99} className="w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none" value={form.levels[0].executeBonus?.threshold ?? 25} onChange={(e) => { const v = Math.max(1, Math.min(99, parseInt(e.target.value) || 25)); if (form.levels[0].executeBonus) updateLevel(0, { executeBonus: { ...form.levels[0].executeBonus, threshold: v } }); }} />
                 %
               </label>
               <label className="flex items-center gap-1 text-[10px] text-gray-400">
                 Bonus HP dmg:
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                  value={form.levels[0].bonusHpDamage?.percent ?? 0}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
-                    updateLevel(0, { bonusHpDamage: v > 0 ? { percent: v, source: form.levels[0].bonusHpDamage?.source ?? "max" } : undefined });
-                  }}
-                />
+                <input type="number" min={0} max={100} className="w-12 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none" value={form.levels[0].bonusHpDamage?.percent ?? 0} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0)); updateLevel(0, { bonusHpDamage: v > 0 ? { percent: v, source: form.levels[0].bonusHpDamage?.source ?? "max" } : undefined }); }} />
                 % of
-                <select
-                  className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
-                  value={form.levels[0].bonusHpDamage?.source ?? "max"}
-                  onChange={(e) => {
-                    if (form.levels[0].bonusHpDamage) updateLevel(0, { bonusHpDamage: { ...form.levels[0].bonusHpDamage, source: e.target.value as "max" | "current" } });
-                  }}
-                >
+                <select className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none" value={form.levels[0].bonusHpDamage?.source ?? "max"} onChange={(e) => { if (form.levels[0].bonusHpDamage) updateLevel(0, { bonusHpDamage: { ...form.levels[0].bonusHpDamage, source: e.target.value as "max" | "current" } }); }}>
                   <option value="max">Max HP</option>
                   <option value="current">Current HP</option>
                 </select>
               </label>
             </div>
-          )}
-          {/* Effects for basic/innate */}
-          <EffectsEditor
-            effects={form.levels[0].effects ?? []}
-            statusEffects={statusEffects}
-            onChange={(effects) => updateLevel(0, { effects: effects.length > 0 ? effects : undefined })}
-          />
-          <RandomEffectPoolsEditor
-            pools={form.levels[0].randomEffectPools ?? []}
-            statusEffects={statusEffects}
-            onChange={(pools) => updateLevel(0, { randomEffectPools: pools.length > 0 ? pools : undefined })}
-          />
-          <RandomEffectPoolsEditor
-            mode="choose"
-            pools={form.levels[0].chooseEffectPools ?? []}
-            statusEffects={statusEffects}
-            onChange={(pools) => updateLevel(0, { chooseEffectPools: pools.length > 0 ? pools : undefined })}
-          />
-          <RandomEffectPoolsEditor
-            mode="cycle"
-            pools={form.levels[0].cycleEffectPools ?? []}
-            statusEffects={statusEffects}
-            onChange={(pools) => updateLevel(0, { cycleEffectPools: pools.length > 0 ? pools : undefined })}
-          />
-          {/* Resistance grants for basic/innate */}
-          <ResistanceGrantsEditor
-            grants={form.levels[0].resistanceGrants ?? []}
-            statusEffects={statusEffects}
-            onChange={(grants) => updateLevel(0, { resistanceGrants: grants.length > 0 ? grants : undefined })}
-          />
-          <DispelsEditor
-            dispels={form.levels[0].dispels ?? []}
-            onChange={(dispels) => updateLevel(0, { dispels: dispels.length > 0 ? dispels : undefined })}
-          />
-          <MovementsEditor
-            movements={form.levels[0].movements ?? []}
-            onChange={(movements) => updateLevel(0, { movements: movements.length > 0 ? movements : undefined })}
-          />
-          <EnergyActionsEditor
-            steal={form.levels[0].energySteal}
-            generate={form.levels[0].energyGenerate}
-            onChangeSteal={(es) => updateLevel(0, { energySteal: es })}
-            onChangeGenerate={(eg) => updateLevel(0, { energyGenerate: eg })}
-          />
+          </CollapsibleSection>
+
+          {/* --- EFFECTS --- */}
+          <CollapsibleSection
+            title="Effects"
+            hasContent={!!(form.levels[0].effects?.length || form.levels[0].randomEffectPools?.length || form.levels[0].chooseEffectPools?.length || form.levels[0].cycleEffectPools?.length || form.levels[0].resistanceGrants?.length)}
+          >
+            <EffectsEditor
+              effects={form.levels[0].effects ?? []}
+              statusEffects={statusEffects}
+              onChange={(effects) => updateLevel(0, { effects: effects.length > 0 ? effects : undefined })}
+            />
+            <RandomEffectPoolsEditor
+              pools={form.levels[0].randomEffectPools ?? []}
+              statusEffects={statusEffects}
+              onChange={(pools) => updateLevel(0, { randomEffectPools: pools.length > 0 ? pools : undefined })}
+            />
+            <RandomEffectPoolsEditor
+              mode="choose"
+              pools={form.levels[0].chooseEffectPools ?? []}
+              statusEffects={statusEffects}
+              onChange={(pools) => updateLevel(0, { chooseEffectPools: pools.length > 0 ? pools : undefined })}
+            />
+            <RandomEffectPoolsEditor
+              mode="cycle"
+              pools={form.levels[0].cycleEffectPools ?? []}
+              statusEffects={statusEffects}
+              onChange={(pools) => updateLevel(0, { cycleEffectPools: pools.length > 0 ? pools : undefined })}
+            />
+            <ResistanceGrantsEditor
+              grants={form.levels[0].resistanceGrants ?? []}
+              statusEffects={statusEffects}
+              onChange={(grants) => updateLevel(0, { resistanceGrants: grants.length > 0 ? grants : undefined })}
+            />
+          </CollapsibleSection>
+
+          {/* --- ACTIONS --- */}
+          <CollapsibleSection
+            title="Actions"
+            hasContent={!!(form.levels[0].dispels?.length || form.levels[0].movements?.length || form.levels[0].energySteal || form.levels[0].energyGenerate)}
+          >
+            <DispelsEditor
+              dispels={form.levels[0].dispels ?? []}
+              onChange={(dispels) => updateLevel(0, { dispels: dispels.length > 0 ? dispels : undefined })}
+            />
+            <MovementsEditor
+              movements={form.levels[0].movements ?? []}
+              onChange={(movements) => updateLevel(0, { movements: movements.length > 0 ? movements : undefined })}
+            />
+            <EnergyActionsEditor
+              steal={form.levels[0].energySteal}
+              generate={form.levels[0].energyGenerate}
+              onChangeSteal={(es) => updateLevel(0, { energySteal: es })}
+              onChangeGenerate={(eg) => updateLevel(0, { energyGenerate: eg })}
+            />
+          </CollapsibleSection>
         </div>
       )}
 
