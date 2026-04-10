@@ -362,10 +362,56 @@ Identity: weak early / strong late chain combatant. Cheap red-cost abilities for
 
 User is configuring these manually in the UI; do not configure them via code.
 
-### Roadmap (after Lightning)
+### Aerith (Specialist) — IN PROGRESS
 
-1. **Squall** (Buster) — chain combat (Slash → Breaking Slash → Blasting Zone via status-condition variant group), anti-back-row blast pattern. NEEDS: `row-behind-target` splash pattern.
-2. **Aerith** (Specialist) — pure healing focus, white magic content
+Identity: healer/support with a Limit Break system mirroring Cloud's. Stacks build passively or via skill riders, unlocking increasingly powerful limit abilities. At max stacks, auto-converts to Limit Break status (1-turn window for Great Gospel). Can spend stacks early on weaker limit abilities or hold for the big payoff.
+
+**Limit system** (mirrors Cloud's pattern):
+- Limit stacks (stackable, max 5, `onMaxStacks` → Limit Break status, same as Cloud)
+- Limit Break status (1 turn, `untilNextTurn`)
+- Limit conditionals are dual-gated: visible/enabled if `requiresMinStacks` (stack-spending phase) OR `requiresAnyStatus: [Limit Break]` (free-use phase)
+- `consumesCasterStacks` with `skipIfStatus: Limit Break` — spends stacks when used pre-5, free during Limit Break window
+
+**Innate options:**
+- **Cetra's Prayer** — gain 1 Limit stack per turn start (same as Cloud's Limit Warrior). Passive, guaranteed limit generation.
+- **Aegis Ward** — passive, turn-start: grant minor shielding to `lowest-hp-ally`. Uses `damageTrigger: "turn-start"` with shielding damage category. Proactive protection, no limit generation.
+
+**Basic options:**
+- **Basic Attack** — physical low single target (standard)
+- **Mend** — healing, minor, single ally, 0 cost. Can include a self-targeted Limit stack rider for passive limit generation while healing.
+
+**Limit conditionals:**
+
+| Requirement | Skill | Effect | Consumes |
+|---|---|---|---|
+| 2+ Limit stacks OR Limit Break | **Healing Wind** | AOE team heal (moderate) | 2 stacks (free during LB) |
+| 3+ Limit stacks OR Limit Break | **Seal Evil** | AOE silence on all enemies | 3 stacks (free during LB) |
+| 4+ Limit stacks OR Limit Break | **Planet Protector** | Team-wide damage reduction buff | 4 stacks (free during LB) |
+| Limit Break only | **Great Gospel** | Massive AOE heal + invincibility (1 turn, `untilNextTurn`) | none (LB expires) |
+
+**Abilities:**
+- **White Magic (Expert)** — template: Cure, Curaga, Dispel, Raise, Protectga, Shellga, Holy, Brave/Bravega, Faith/Faithga, Reraise
+- **Pulse of Life** — single-target high heal + dispel 1 debuff. High cost. Can include Limit stack rider.
+- Additional ability slots TBD based on playtesting.
+
+**Limit generation philosophy**: if Cetra's Prayer is not equipped, limit can still be generated via skill riders — add a self-targeted Limit stack effect (on-use trigger) to any ability. Different loadouts generate limit at different speeds. No new system needed.
+
+**Statuses/tags built for Aerith:**
+- Invincible tag — takes no damage, effects still apply (for Great Gospel)
+- Auto-revive tag — on defeat, revive at hpPercent% HP, buff consumed (for Reraise)
+- Shielding damage category — absorbs damage before HP, blue bar overlay
+- `consumesCasterStacks` field — spend N stacks of a buff on skill use, with `skipIfStatus` for free use during Limit Break
+- `requiresMinStacks` field — gate skill visibility/enablement on stack count
+- `lowest-hp-ally` target type — auto-targets living ally with lowest HP
+- `fallen-ally` target type — targets dead allies only (for Raise)
+- `revive` skill flag — sets dead target to 1 HP before healing applies
+- `damageTrigger` field — controls when damage/healing/shielding resolves ("on-use" default, "turn-start" for passives)
+- `offensiveStatOverride` — override which stat scales damage (for Holy using SPI)
+
+### Roadmap
+
+1. ~~Squall~~ — done
+2. **Aerith** — in progress (see above)
 3. **Vivi** (Arcanist) — Black Magic template, **Double Cast** mechanic (consume turn once, resolve two skill picks). NEW system.
 4. **Terra** (Arcanist) — Trance reuses Zidane's pattern, Black Magic reuses Vivi's template
 5. **Yuna** (Specialist) — Bar/En spells (uses existing eleRes/eleDmg buffs), summons (UNKNOWN system, biggest unknown)
@@ -399,30 +445,31 @@ User is configuring these manually in the UI; do not configure them via code.
 
 ## Where we left off (most recent context)
 
-- **Squall configuration in progress** — chain abilities (9 variants) are designed and being configured in the UI. Standalone abilities (Keen Edge, Fated Circle, Revolver Drive) are designed and ready to configure. Innate options (Red Draw, Dual Wield, Lionheart) are designed; Red Draw is configured.
-- **System primitives built for Squall across sessions**:
-  - `row-behind-target` splash pattern — for Blasting Zone
-  - `push-back-one` movement type — for Rough Divide
-  - `pull-forward-one` movement type — for Revolver Drive L1
-  - `ignoreRowDefense` skill field — for Renzokuken's anti-back-row sniping
-  - `guaranteedHit` skill field — per-skill toggle that bypasses miss/dodge/cover
-  - `recoil-self-one` and `switch-self-adjacent` movement types — for Fire Cross
-  - `MovementAction.timing` field (`before-damage` / `after-damage`) — enables "dash then strike" vs "strike then recoil"
-  - `round-start` effect trigger on `energyGenerate` — for Red Draw innate. Wired into both `startBattle` (round 1) and `advanceToTurn` (subsequent rounds).
-  - `multi-strike` effect tag (hits, skillId) — for Dual Wield innate. Independent miss/dodge/cover per hit. Also wired into counter-attacks.
-  - `guaranteed-hit` effect tag (filter) — for Lionheart innate. Bypasses miss, dodge, and cover.
-  - `"skill"` param type for effect tag editor — searchable skill picker dropdown
-  - `activeWhileDefeated` skill field — opt-in for passives that persist after death
-- **UI improvements shipped this session**:
-  - SkillForm collapsible sections: Core (always open), Damage & Targeting, Damage Riders, Effects, Actions, Template. Blue dot indicator when section has content.
-  - Active character panel: buffs/debuffs display (color-coded pills), unaffordable skills greyed out (opacity-40, still clickable)
-  - Details panel: same buff display + skill affordability treatment
-  - Template spell affordability: greyed out when unaffordable, uses spell's own cost (not parent template)
-  - Variable repeat: slider replaced with clickable numbered energy circles, capped by available energy
-  - Battle stats panel: collapsible table with Total/Direct/AOE/Indirect/True damage breakdown per character + healing/taken/energy/skills
-  - End-of-round modal: energy pool display with click-to-convert rainbow conversion
-  - Defeated characters: greyed out + grayscale on grid, "DEFEATED" label, card border tint at low HP (yellow <50%, red <25%), HP bar bumped to 8px
-- **Bug fixes shipped this session**: template spells now deduct spell's own energy cost (not parent template's), defeated characters can't cover, choose-mode energy steal credits the correct caster (stores casterId in request), round-start energy generation fires on round 1 (not just round 2+)
+- **Aerith configuration in progress** — innates (Cetra's Prayer, Aegis Ward) and basics (Basic Attack, Mend) configured. Limit conditionals (Healing Wind, Seal Evil, Planet Protector, Great Gospel) designed with dual-gated visibility. Working on abilities — Pulse of Life designed, considering limit stack riders on healing abilities for alternative limit generation without Cetra's Prayer.
+- **Squall configuration complete** — all chain abilities, standalone abilities, and innates designed and configured.
+- **System primitives built across all sessions**:
+  - Movement types: `push-back-one`, `pull-forward-one`, `recoil-self-one`, `switch-self-adjacent`
+  - Movement timing: `MovementAction.timing` (`before-damage` / `after-damage`)
+  - Splash patterns: `row-behind-target`
+  - Skill fields: `ignoreRowDefense`, `guaranteedHit`, `activeWhileDefeated`, `revive`, `bonusShieldDamage` (future shieldbreaker), `offensiveStatOverride`, `damageTrigger` (on-use / turn-start)
+  - Stack system: `requiresMinStacks`, `consumesCasterStacks` (with `skipIfStatus` for Limit Break free-use)
+  - Effect tags: `multi-strike`, `guaranteed-hit`, `invincible`, `auto-revive`
+  - Tag param types: `"skill"` (searchable skill picker dropdown)
+  - Triggers: `round-start` on `energyGenerate` (wired into both `startBattle` and `advanceToTurn`)
+  - Target types: `lowest-hp-ally`, `fallen-ally`
+  - Damage categories: `shielding` (absorbs damage before HP, blue bar overlay, tracked in battle stats)
+  - Healing/shielding formula: `BASE_POWER × (SPI / 50) × tierMultiplier` — divisor 50 tuned for base stats around 50
+- **UI improvements shipped across sessions**:
+  - SkillForm collapsible sections with blue dot indicators
+  - Active character panel: buffs/debuffs pills, unaffordable skills greyed out, shield bar overlay
+  - Details panel: buff display, skill affordability, shield bar overlay
+  - Template spells: affordability check, dead character filtering, AOE targeting (no dropdown), `fallen-ally` support
+  - Variable repeat: clickable energy circles replacing slider, capped by available energy
+  - Battle stats: collapsible table with Total/Direct/AOE/Indirect/True/Healing/Shields/Taken/Energy/Skills
+  - End-of-round modal: energy pool with click-to-convert rainbow
+  - Grid characters: defeated greyed out + grayscale, HP border tint (yellow <50%, red <25%), MISS/DODGE/IMMUNE floats
+  - Shield visual: blue overlay bar on HP in grid chips, active character panel, and details panel
+- **Bug fixes shipped across sessions**: template spell energy cost, defeated cover, choose-mode steal counter, round-1 energy gen, multi-strike cover redirect, template AOE targeting, healing on dead targets blocked
 - **Database snapshot import/export shipped** — `db/snapshot.json` workflow for cross-machine sync.
 - **Leveling system playtested but not yet tuned** — character leveling (rainbow → +10% combat stats, max Lv 3) and skill points (1 SP/round per living char).
 - **Future shop feature** is on the table for the End-of-Round Phase modal — scaffolding is ready.

@@ -179,8 +179,38 @@ export function resolveTargets(
     case "aoe-team":
       return { mode: "aoe", targets: toTargetInfo([...self, ...allies]) };
 
+    case "lowest-hp-ally": {
+      // Auto-target the living ally (including self) with the lowest current HP
+      const allAlliesAndSelf = [...self, ...allies];
+      if (allAlliesAndSelf.length === 0) return { mode: "self", targets: [] };
+      if (!currentHpMap) return { mode: "self", targets: toTargetInfo(allAlliesAndSelf.slice(0, 1)) };
+      const sorted = [...allAlliesAndSelf].sort((a, b) => {
+        const hpA = currentHpMap[a.characterId] ?? Infinity;
+        const hpB = currentHpMap[b.characterId] ?? Infinity;
+        return hpA - hpB;
+      });
+      return { mode: "self", targets: toTargetInfo([sorted[0]]) };
+    }
+
     case "self":
       return { mode: "self", targets: toTargetInfo(self) };
+
+    case "fallen-ally": {
+      // Targets dead allies only — bypasses the isAlive filter
+      if (!currentHpMap) return { mode: "dropdown", targets: [] };
+      const fallenAllies: PlacedUnit[] = [];
+      for (const team of teams) {
+        if (team.side !== casterSide) continue;
+        for (const p of team.placements) {
+          if (p.characterId === casterId) continue;
+          const hp = currentHpMap[p.characterId];
+          if (hp !== undefined && hp <= 0) {
+            fallenAllies.push({ characterId: p.characterId, side: team.side as "left" | "right", position: p.position });
+          }
+        }
+      }
+      return { mode: "dropdown", targets: toTargetInfo(fallenAllies) };
+    }
 
     default:
       return { mode: "none", targets: [] };

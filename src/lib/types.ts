@@ -33,7 +33,9 @@ export const TARGET_TYPES = [
   "random-ally",
   "adjacent-ally",
   "aoe-team",
+  "lowest-hp-ally",
   "self",
+  "fallen-ally",
   "no-target",
 ] as const;
 export type TargetType = (typeof TARGET_TYPES)[number];
@@ -56,7 +58,9 @@ export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "random-ally": "Random Ally",
   "adjacent-ally": "Adjacent Ally",
   "aoe-team": "AOE Team",
+  "lowest-hp-ally": "Lowest HP Ally",
   "self": "Self",
+  "fallen-ally": "Fallen Ally",
   "no-target": "No Target",
 };
 
@@ -152,7 +156,9 @@ export interface SkillLevel {
   instant?: boolean;
   passive?: boolean; // "while equipped" — effects auto-apply permanently while skill is equipped
   activeWhileDefeated?: boolean; // if true, passive/while-equipped effects persist even when the character is defeated (default: false)
-  damageCategory?: "physical" | "magical" | "true" | "healing";
+  damageCategory?: "physical" | "magical" | "true" | "healing" | "shielding";
+  damageTrigger?: EffectTrigger; // when the damage/healing/shielding resolves. Default "on-use". Set to "turn-start" for passive shielding/healing innates.
+  offensiveStatOverride?: "atk" | "mAtk" | "def" | "spi" | "spd"; // override which attacker stat is used for damage calculation (default: ATK for physical, MATK for magical, SPI for healing)
   rangeTags?: ("melee" | "ranged" | "magic")[]; // optional delivery tags; melee triggers back-row damage penalty
   damageTier?: string;
   randomTierPool?: string[]; // when damageTier is "random", restrict the pool to these tiers
@@ -181,7 +187,11 @@ export interface SkillLevel {
   bonusDamageVsStatus?: { statusEffectId: string; percent: number }; // bonus % damage when the defender has the named status effect active
   splashHit?: SplashHit; // secondary damage payload that hits additional targets after the primary hit lands
   requiresAnyStatus?: string[]; // skill is disabled in the action bar unless the caster has at least one of these status effects active
+  requiresMinStacks?: { effectId: string; count: number }; // skill is disabled unless the caster has at least `count` stacks of the specified buff
+  revive?: boolean; // when true, targets at 0 HP are set to 1 HP before healing is applied (works with fallen-ally targeting)
+  bonusShieldDamage?: number; // % bonus damage dealt to shields specifically (e.g. 50 = 50% extra damage against shield portion). Future shieldbreaker support.
   consumesCasterImbue?: boolean; // after damage applies, strip all imbue-tagged buffs from the caster
+  consumesCasterStacks?: { effectId: string; count: number; skipIfStatus?: string }; // after skill resolves, remove `count` stacks of the specified buff from caster. If stacks reach 0, remove the buff. Skipped if caster has `skipIfStatus` active.
 }
 
 export type SplashTargetPattern =
@@ -482,45 +492,70 @@ export function resolveFormView(
         if (!hasVariantMatch) return false;
       }
       // Evaluate additional conditions (all must pass = AND logic)
+      let conditionsMet = true;
       if (a.conditions && a.conditions.length > 0) {
         for (const cond of a.conditions) {
           switch (cond.type) {
             case "form":
-              if (activeFormId !== cond.value) return false;
+              if (activeFormId !== cond.value) conditionsMet = false;
               break;
             case "buff":
-              // Only evaluate during battle
-              if (!battleState) return true; // show in non-battle contexts
-              if (!battleState.buffs.some((b) => b.effectId === cond.value)) return false;
+              if (!battleState) break; // show in non-battle contexts
+              if (!battleState.buffs.some((b) => b.effectId === cond.value)) conditionsMet = false;
               break;
             case "debuff":
-              if (!battleState) return true;
+              if (!battleState) break;
               if (cond.value === "any") {
-                if (!battleState.buffs.some((b) => b.category === "debuff")) return false;
+                if (!battleState.buffs.some((b) => b.category === "debuff")) conditionsMet = false;
               } else {
-                if (!battleState.buffs.some((b) => b.effectId === cond.value)) return false;
+                if (!battleState.buffs.some((b) => b.effectId === cond.value)) conditionsMet = false;
               }
               break;
             case "status":
-              if (!battleState) return true;
+              if (!battleState) break;
               if (cond.value === "any") {
-                if (!battleState.buffs.some((b) => b.category === "status")) return false;
+                if (!battleState.buffs.some((b) => b.category === "status")) conditionsMet = false;
               } else {
-                if (!battleState.buffs.some((b) => b.effectId === cond.value)) return false;
+                if (!battleState.buffs.some((b) => b.effectId === cond.value)) conditionsMet = false;
               }
               break;
             case "hp-below":
-              if (!battleState) return true;
-              if ((battleState.currentHp / battleState.maxHp) * 100 >= parseFloat(cond.value)) return false;
+              if (!battleState) break;
+              if ((battleState.currentHp / battleState.maxHp) * 100 >= parseFloat(cond.value)) conditionsMet = false;
               break;
             case "hp-above":
-              if (!battleState) return true;
-              if ((battleState.currentHp / battleState.maxHp) * 100 <= parseFloat(cond.value)) return false;
+              if (!battleState) break;
+              if ((battleState.currentHp / battleState.maxHp) * 100 <= parseFloat(cond.value)) conditionsMet = false;
               break;
           }
+          if (!conditionsMet) break;
         }
       }
-      return true;
+      // Check if the skill level has its own visibility requirements (requiresAnyStatus / requiresMinStacks).
+      // These act as additional visibility gates — if present, at least one must be met (OR with each other).
+      // If neither is configured, fall through to the conditionsMet result.
+      const skillLevel = skill.levels[0]; // conditionals use level 0
+      const reqStatus = skillLevel.requiresAnyStatus ?? [];
+      const reqStacks = skillLevel.requiresMinStacks;
+      const hasLevelRequirements = reqStatus.length > 0 || !!reqStacks;
+
+      if (!hasLevelRequirements) {
+        // No level-based requirements — visibility depends only on assignment conditions
+        return conditionsMet;
+      }
+
+      // Level-based requirements exist. Check them (OR logic between requiresAnyStatus and requiresMinStacks).
+      // The skill is visible if ANY of: assignment conditions pass, requiresAnyStatus met, requiresMinStacks met.
+      if (conditionsMet && (!a.conditions || a.conditions.length === 0)) {
+        // No assignment conditions were set — don't auto-pass, require level conditions to be checked
+      } else if (conditionsMet) {
+        return true; // assignment conditions passed — show it
+      }
+
+      if (!battleState) return true; // show in non-battle contexts
+      if (reqStatus.length > 0 && battleState.buffs.some((b) => reqStatus.includes(b.effectId))) return true;
+      if (reqStacks && battleState.buffs.some((b) => b.effectId === reqStacks.effectId && (b.stacks ?? 1) >= reqStacks.count)) return true;
+      return false;
     })
     .map((a) => getSkill(a.skillId)!)
     .filter(Boolean);
@@ -603,6 +638,7 @@ export interface DamageResult {
   elementalModifier: number;
   finalDamage: number;
   isHealing: boolean;
+  isShielding: boolean;
   element?: Element | null; // resolved element after imbue, etc.
   breakdown: string[];
 }

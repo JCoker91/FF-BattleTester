@@ -257,6 +257,7 @@ function CharacterChip({
   isSelected,
   currentHp,
   maxHp,
+  shieldAmount,
   photoOverride,
 }: {
   character: Character;
@@ -265,6 +266,7 @@ function CharacterChip({
   isSelected?: boolean;
   currentHp?: number;
   maxHp?: number;
+  shieldAmount?: number;
   photoOverride?: string;
 }) {
   const showHp = currentHp !== undefined && maxHp !== undefined;
@@ -300,14 +302,20 @@ function CharacterChip({
             <div className="text-[9px] text-red-400/70 font-semibold mt-0.5">DEFEATED</div>
           ) : (
             <div className="flex items-center gap-1 mt-0.5">
-              <div className="flex-1 h-2 bg-gray-600 rounded-full overflow-hidden">
+              <div className="flex-1 h-2 bg-gray-600 rounded-full overflow-hidden relative">
                 <div
                   className={`h-full ${hpColor} transition-all duration-300 rounded-full`}
                   style={{ width: `${hpPct}%` }}
                 />
+                {(shieldAmount ?? 0) > 0 && maxHp && (
+                  <div
+                    className="absolute top-0 left-0 h-full bg-blue-400/60 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(100, ((shieldAmount! + (currentHp ?? 0)) / maxHp) * 100)}%` }}
+                  />
+                )}
               </div>
               <span className="text-[9px] text-gray-400 shrink-0 tabular-nums">
-                {currentHp}/{maxHp}
+                {(shieldAmount ?? 0) > 0 ? <><span className="text-blue-300">+{shieldAmount}</span> </> : ""}{currentHp}/{maxHp}
               </span>
             </div>
           )
@@ -332,6 +340,7 @@ function DraggableCharacter({
   isSelected,
   currentHp,
   maxHp,
+  shieldAmount,
   photoOverride,
   onSelect,
 }: {
@@ -341,6 +350,7 @@ function DraggableCharacter({
   isSelected?: boolean;
   currentHp?: number;
   maxHp?: number;
+  shieldAmount?: number;
   photoOverride?: string;
   onSelect?: () => void;
 }) {
@@ -357,7 +367,7 @@ function DraggableCharacter({
       className={`transition-transform duration-100 ${isDragging ? "cursor-grabbing" : "cursor-pointer hover:scale-110"}`}
       onClick={onSelect}
     >
-      <CharacterChip character={character} isDragging={isDragging} flipImage={flipImage} isSelected={isSelected} currentHp={currentHp} maxHp={maxHp} photoOverride={photoOverride} />
+      <CharacterChip character={character} isDragging={isDragging} flipImage={flipImage} isSelected={isSelected} currentHp={currentHp} maxHp={maxHp} shieldAmount={shieldAmount} photoOverride={photoOverride} />
     </div>
   );
 }
@@ -370,6 +380,7 @@ function GridCell({
   col,
   selectedCharId,
   hpMap,
+  shieldMap,
   formPhotoMap,
   onSelectCharacter,
   onHoverCharacter,
@@ -385,6 +396,7 @@ function GridCell({
   col: number;
   selectedCharId?: string | null;
   hpMap?: Record<string, number>;
+  shieldMap?: Record<string, number>;
   formPhotoMap?: Record<string, string>; // charId -> photo url
   onSelectCharacter?: (id: string) => void;
   onHoverCharacter?: (id: string | null) => void;
@@ -396,6 +408,7 @@ function GridCell({
   const charHp = character && hpMap ? {
     currentHp: hpMap[character.id] ?? character.stats.hp,
     maxHp: character.stats.hp,
+    shieldAmount: shieldMap?.[character.id],
   } : {};
   const { isOver, setNodeRef } = useDroppable({ id });
 
@@ -723,8 +736,9 @@ export default function BattlefieldPage() {
   >(null);
   const [convertEnergyModal, setConvertEnergyModal] = useState<{ side: string; color: EnergyColor } | null>(null);
   const [stolenEnergyByChar, setStolenEnergyByChar] = useState<Record<string, number>>({}); // charId → total energy stolen this battle
-  const [battleStats, setBattleStats] = useState<Record<string, { damageDone: number; directDmg: number; aoeDmg: number; indirectDmg: number; trueDmg: number; healingDone: number; damageTaken: number; energySpent: number; skillsUsed: number }>>({});
-  const emptyStats = { damageDone: 0, directDmg: 0, aoeDmg: 0, indirectDmg: 0, trueDmg: 0, healingDone: 0, damageTaken: 0, energySpent: 0, skillsUsed: 0 };
+  const [shieldMap, setShieldMap] = useState<Record<string, number>>({}); // charId → current shield HP
+  const [battleStats, setBattleStats] = useState<Record<string, { damageDone: number; directDmg: number; aoeDmg: number; indirectDmg: number; trueDmg: number; healingDone: number; shieldingDone: number; damageTaken: number; energySpent: number; skillsUsed: number }>>({});
+  const emptyStats = { damageDone: 0, directDmg: 0, aoeDmg: 0, indirectDmg: 0, trueDmg: 0, healingDone: 0, shieldingDone: 0, damageTaken: 0, energySpent: 0, skillsUsed: 0 };
   const addBattleStat = (charId: string, field: string, amount: number) => {
     setBattleStats((prev) => {
       const cur = prev[charId] ?? { ...emptyStats };
@@ -1030,9 +1044,47 @@ export default function BattlefieldPage() {
       for (const id of revived) next.delete(id);
       return next;
     });
+    // Check auto-revive for newly dead characters
+    const autoRevived: string[] = [];
     for (const id of newDeaths) {
       const name = getCharacter(id)?.name ?? "Unknown";
-      addBattleLog(`${name} has been defeated!`);
+      const charBuffs = buffsMap[id] ?? [];
+      let autoReviveHpPct = 0;
+      let autoReviveBuffId: string | null = null;
+      for (const b of charBuffs) {
+        if (!b.tags) continue;
+        for (const t of b.tags) {
+          if (t.type === "auto-revive") {
+            autoReviveHpPct = (t.params.hpPercent as number) ?? 25;
+            autoReviveBuffId = b.id;
+            break;
+          }
+        }
+        if (autoReviveBuffId) break;
+      }
+      if (autoReviveBuffId && autoReviveHpPct > 0) {
+        const char = getCharacter(id);
+        const maxHp = char?.stats.hp ?? 100;
+        const reviveHp = Math.max(1, Math.ceil(maxHp * (autoReviveHpPct / 100)));
+        setCurrentHpMap((prev) => ({ ...prev, [id]: reviveHp }));
+        setBuffsMap((prev) => ({
+          ...prev,
+          [id]: (prev[id] ?? []).filter((b) => b.id !== autoReviveBuffId),
+        }));
+        autoRevived.push(id);
+        addBattleLog(`${name} was defeated but Auto-Revive triggered! Revived with ${reviveHp} HP (${autoReviveHpPct}%).`);
+        spawnFloat(id, "AUTO-REVIVE", "text-yellow-300");
+      } else {
+        addBattleLog(`${name} has been defeated!`);
+      }
+    }
+    // Remove auto-revived characters from the death set
+    if (autoRevived.length > 0) {
+      setDefeatedCharIds((prev) => {
+        const next = new Set(prev);
+        for (const id of autoRevived) next.delete(id);
+        return next;
+      });
     }
     for (const id of revived) {
       const name = getCharacter(id)?.name ?? "Unknown";
@@ -1343,6 +1395,7 @@ export default function BattlefieldPage() {
     setDefeatedCharIds(new Set());
     setStolenEnergyByChar({});
     setBattleStats({});
+    setShieldMap({});
     setInstantUsedMap({});
     // Apply "while equipped" passive buffs at battle start
     const initialBuffs: Record<string, BuffDebuff[]> = {};
@@ -1588,6 +1641,47 @@ export default function BattlefieldPage() {
           addBattleLog(`${char.name}'s ${skill.name}: ${se.name}${modText} applied to ${tName}${eff.duration === -1 ? "" : ` for ${eff.duration} turns`}.`);
         }
       });
+
+      // Process turn-start damage/healing/shielding from passive skills
+      if (level.damageCategory && (level.damageTrigger === "turn-start")) {
+        const dmgTargets = resolveTargets(level.targetType, charId, teams, getCharacter, currentHpMapRef.current);
+        const targetIds = dmgTargets.targets.map((t) => t.characterId);
+        if (targetIds.length > 0) {
+          // Build attacker combat stats
+          const aFormId = battleFormMap[charId];
+          const aForm = aFormId ? getFormsForCharacter(charId).find((f) => f.id === aFormId) : null;
+          const aStats = applyCharLevelStats(aForm?.statOverrides ? { ...char.stats, ...aForm.statOverrides } : char.stats, characterLevelMap[char.id] ?? 0);
+          const aElemDmg = aForm?.elementalDmgOverride ? { ...char.elementalDamage, ...aForm.elementalDmgOverride } : char.elementalDamage;
+          const aCombat = { stats: aStats, elementalResistance: char.elementalResistance, elementalDamage: aElemDmg, buffs: charBuffs, currentHp: currentHpMap[charId] ?? char.stats.hp, col: undefined as number | undefined };
+          for (const tid of targetIds) {
+            const targetChar = getCharacter(tid);
+            if (!targetChar) continue;
+            const result = calculateDamage(aCombat, { stats: targetChar.stats, elementalResistance: targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? targetChar.stats.hp }, level);
+            if (result.isShielding) {
+              setShieldMap((prev) => ({ ...prev, [tid]: (prev[tid] ?? 0) + result.finalDamage }));
+              spawnFloat(tid, `+${result.finalDamage} SHIELD`, "text-blue-300");
+              addBattleLog(`${char.name}'s ${skill.name}: ${targetChar.name} gains ${result.finalDamage} shield.`);
+              addBattleStat(charId, "shieldingDone", result.finalDamage);
+            } else if (result.isHealing) {
+              const curHp = currentHpMapRef.current[tid] ?? targetChar.stats.hp;
+              if (curHp <= 0) continue; // don't heal dead
+              const newHp = Math.min(targetChar.stats.hp, curHp + result.finalDamage);
+              setCurrentHpMap((prev) => ({ ...prev, [tid]: newHp }));
+              spawnDamageFloat(tid, result.finalDamage, true);
+              addBattleLog(`${char.name}'s ${skill.name}: heals ${targetChar.name} for ${result.finalDamage} HP.`);
+              addBattleStat(charId, "healingDone", result.finalDamage);
+            } else {
+              const curHp = currentHpMapRef.current[tid] ?? targetChar.stats.hp;
+              const newHp = Math.max(0, curHp - result.finalDamage);
+              setCurrentHpMap((prev) => ({ ...prev, [tid]: newHp }));
+              spawnDamageFloat(tid, result.finalDamage, false);
+              addBattleLog(`${char.name}'s ${skill.name}: deals ${result.finalDamage} damage to ${targetChar.name}.`);
+              addBattleStat(charId, "damageDone", result.finalDamage);
+              addBattleStat(tid, "damageTaken", result.finalDamage);
+            }
+          }
+        }
+      }
     }
 
     return skipTurn;
@@ -2038,6 +2132,7 @@ export default function BattlefieldPage() {
                     }}
                     selectedCharId={gridSelectedId}
                     hpMap={phase === "battle" ? currentHpMap : undefined}
+                    shieldMap={phase === "battle" ? shieldMap : undefined}
                     formPhotoMap={formPhotoMap}
                     onHoverCharacter={phase === "battle" ? setHoveredCharId : undefined}
                     animClass={phase === "battle" && getCharAtPos(teams[0], row, col) ? animMap[getCharAtPos(teams[0], row, col)!.id] : undefined}
@@ -2083,6 +2178,7 @@ export default function BattlefieldPage() {
                     }}
                     selectedCharId={gridSelectedId}
                     hpMap={phase === "battle" ? currentHpMap : undefined}
+                    shieldMap={phase === "battle" ? shieldMap : undefined}
                     formPhotoMap={formPhotoMap}
                     onHoverCharacter={phase === "battle" ? setHoveredCharId : undefined}
                     animClass={phase === "battle" && getCharAtPos(teams[1], row, col) ? animMap[getCharAtPos(teams[1], row, col)!.id] : undefined}
@@ -2418,10 +2514,15 @@ export default function BattlefieldPage() {
                           <span className="text-[10px] text-gray-500">{aType}</span>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                          <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden relative">
                             <div className={`h-full ${hpColor} rounded-full`} style={{ width: `${hpPct}%` }} />
+                            {(shieldMap[activeCharId] ?? 0) > 0 && (
+                              <div className="absolute top-0 left-0 h-full bg-blue-400/60 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, ((shieldMap[activeCharId] + aHp) / aMaxHp) * 100)}%` }} />
+                            )}
                           </div>
-                          <span className="text-[10px] text-gray-400 tabular-nums">{aHp}/{aMaxHp}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums">
+                            {(shieldMap[activeCharId] ?? 0) > 0 && <span className="text-blue-300">+{shieldMap[activeCharId]} </span>}{aHp}/{aMaxHp}
+                          </span>
                         </div>
                       </div>
                     </button>
@@ -2478,10 +2579,17 @@ export default function BattlefieldPage() {
                       const maxLevel = 3;
                       // Status restrictions: stunned = all disabled, silenced = only allowed types
                       const isInstantUsed = !!skill.levels[levelIdx]?.instant && (instantUsedMap[activeCharId] ?? []).includes(skill.id);
-                      // requiresAnyStatus: skill is disabled unless the caster has at least one of the listed statuses active
+                      // requiresAnyStatus: skill is enabled if the caster has at least one of the listed statuses
                       const requiresList = skill.levels[levelIdx]?.requiresAnyStatus ?? [];
-                      const requiresUnmet = requiresList.length > 0 && !(activeBuffs ?? []).some((b) => requiresList.includes(b.effectId));
-                      const isDisabledByStatus = isStunned || (restrictedSkillTypes !== null && !restrictedSkillTypes.has(type)) || isInstantUsed || requiresUnmet;
+                      const requiresStatusMet = requiresList.length > 0 && (activeBuffs ?? []).some((b) => requiresList.includes(b.effectId));
+                      // requiresMinStacks: skill is enabled if the caster has >= N stacks of a specific buff
+                      const minStacks = skill.levels[levelIdx]?.requiresMinStacks;
+                      const minStacksMet = !!minStacks && (activeBuffs ?? []).some((b) => b.effectId === minStacks.effectId && (b.stacks ?? 1) >= minStacks.count);
+                      // OR logic: if any requirement is configured, at least one must be met.
+                      // If none are configured, the skill is enabled by default.
+                      const hasAnyRequirement = requiresList.length > 0 || !!minStacks;
+                      const requirementsUnmet = hasAnyRequirement && !requiresStatusMet && !minStacksMet;
+                      const isDisabledByStatus = isStunned || (restrictedSkillTypes !== null && !restrictedSkillTypes.has(type)) || isInstantUsed || requirementsUnmet;
                       const typeLabel = type === "conditional" ? "COND" : type.toUpperCase();
                       const typeColor = type === "innate" ? "text-purple-400" : type === "basic" ? "text-blue-400" : type === "ability" ? "text-green-400" : "text-amber-400";
                       const isLeveled = canLevel && currentLevel > 1;
@@ -2496,15 +2604,16 @@ export default function BattlefieldPage() {
                       const isExpanded = expandedTemplateSkillId === skill.id;
 
                       const isUnaffordable = type !== "innate" && !canAffordSkill(skill.id);
-                      const requiredNames = requiresUnmet ? requiresList.map((sid) => statusEffects.find((s) => s.id === sid)?.name).filter(Boolean).join(", ") : "";
+                      const requiredNames = requiresList.map((sid) => statusEffects.find((s) => s.id === sid)?.name).filter(Boolean).join(", ");
+                      const minStacksName = minStacks ? (statusEffects.find((s) => s.id === minStacks.effectId)?.name ?? "stacks") : "";
                       const disabledTitle = isStunned
                         ? "Stunned"
                         : restrictedSkillTypes !== null && !restrictedSkillTypes.has(type)
                           ? "Silenced"
                           : isInstantUsed
                             ? "Already used this round (instant)"
-                            : requiresUnmet
-                              ? `Requires: ${requiredNames}`
+                            : requirementsUnmet
+                              ? `Requires: ${[requiredNames, minStacks ? `${minStacks.count}+ ${minStacksName}` : ""].filter(Boolean).join(" or ")}`
                               : undefined;
                       return (
                         <div key={skill.id} title={disabledTitle} className={`w-24 border rounded text-left transition-colors flex flex-col ${isExpanded ? "ring-1 ring-blue-400/50" : ""} ${isDisabledByStatus ? "opacity-40 pointer-events-none" : isUnaffordable ? `${bgClass} opacity-40` : bgClass}`}>
@@ -2651,10 +2760,17 @@ export default function BattlefieldPage() {
                     const targetType = selSkill?.levels[0]?.targetType;
                     const attackerSideLocal = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
                     const allPlaced = teams.flatMap((t) => t.placements.map((p) => ({ charId: p.characterId, side: t.side })));
-                    const isAllyTarget = targetType && ["target-ally", "target-ally-or-self", "adjacent-ally", "aoe-team", "random-ally"].includes(targetType);
+                    const isFallenAlly = targetType === "fallen-ally";
+                    const isAllyTarget = targetType && ["target-ally", "target-ally-or-self", "adjacent-ally", "random-ally"].includes(targetType);
+                    const isTeamAoe = targetType === "aoe-team";
                     const isSelfTarget = targetType === "self" || targetType === "target-ally-or-self";
                     const isEnemyTarget = targetType && ["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"].includes(targetType);
                     let validTargets = allPlaced.filter((p) => {
+                      const hp = currentHpMap[p.charId] ?? (getCharacter(p.charId)?.stats.hp ?? 1);
+                      if (isFallenAlly) return p.side === attackerSideLocal && p.charId !== activeCharId && hp <= 0;
+                      // Filter dead characters from all non-fallen targeting
+                      if (hp <= 0) return false;
+                      if (isTeamAoe) return p.side === attackerSideLocal; // includes caster
                       if (isAllyTarget) return p.side === attackerSideLocal && (isSelfTarget || p.charId !== activeCharId);
                       if (isSelfTarget && targetType === "self") return p.charId === activeCharId;
                       if (isEnemyTarget) return p.side !== attackerSideLocal;
@@ -2765,7 +2881,9 @@ export default function BattlefieldPage() {
                           const hasDamage = !!selLevel.damageCategory;
                           const hasEffects = (selLevel.effects ?? []).length > 0;
                           const hasDispels = (selLevel.dispels ?? []).length > 0;
-                          const needsTarget = (selLevel.targetType && selLevel.targetType !== "no-target" && selLevel.targetType !== "self");
+                          const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy", "all-front-row-enemy", "all-middle-row-enemy", "all-back-row-enemy", "front-two-rows-enemy", "back-two-rows-enemy", "same-line-enemy"]);
+                          const isAoeSkillCheck = selLevel.targetType ? aoeTypes.has(selLevel.targetType) : false;
+                          const needsTarget = (selLevel.targetType && selLevel.targetType !== "no-target" && selLevel.targetType !== "self" && !isAoeSkillCheck);
                           return (
                           <div className="bg-gray-900/50 rounded p-2 space-y-2">
                             <div className="text-xs text-white font-medium">{selSkill.name}</div>
@@ -2787,6 +2905,11 @@ export default function BattlefieldPage() {
                                       return <option key={t.charId} value={t.charId}>{c?.name ?? "Unknown"} {t.charId === activeCharId ? "(self)" : `(${t.side === attackerSideLocal ? "ally" : "enemy"})`}</option>;
                                     })}
                                   </select>
+                                )}
+                                {isAoeSkillCheck && (
+                                  <div className="text-[10px] text-gray-400">
+                                    Targets: {validTargets.map((t) => getCharacter(t.charId)?.name ?? "Unknown").join(", ")}
+                                  </div>
                                 )}
                                 {hasDispels && (
                                   <div className="space-y-0.5">
@@ -3088,6 +3211,7 @@ export default function BattlefieldPage() {
                 characterLevelMap={characterLevelMap}
                 onSetFormId={(fid) => setBattleFormMap((prev) => ({ ...prev, [viewedCharId]: fid }))}
                 canAffordSkill={canAffordSkill}
+                shieldMap={shieldMap}
                 onSelectSkill={setSelectedSkill}
                 onSetHp={(charId, hp) =>
                   setCurrentHpMap((prev) => ({ ...prev, [charId]: hp }))
@@ -3153,6 +3277,7 @@ export default function BattlefieldPage() {
                     <th className="text-right px-2 py-1 border-b border-gray-800">Indirect</th>
                     <th className="text-right px-2 py-1 border-b border-gray-800">True</th>
                     <th className="text-right px-2 py-1 border-b border-gray-800">Healing</th>
+                    <th className="text-right px-2 py-1 border-b border-gray-800">Shields</th>
                     <th className="text-right px-2 py-1 border-b border-gray-800">Taken</th>
                     <th className="text-right px-2 py-1 border-b border-gray-800">Energy</th>
                     <th className="text-right px-2 py-1 border-b border-gray-800">Skills</th>
@@ -3171,6 +3296,7 @@ export default function BattlefieldPage() {
                         <td className="px-2 py-1 text-right tabular-nums text-gray-400">{s.indirectDmg || "-"}</td>
                         <td className="px-2 py-1 text-right tabular-nums text-purple-300">{s.trueDmg || "-"}</td>
                         <td className="px-2 py-1 text-right tabular-nums text-green-400">{s.healingDone || "-"}</td>
+                        <td className="px-2 py-1 text-right tabular-nums text-blue-300">{s.shieldingDone || "-"}</td>
                         <td className="px-2 py-1 text-right tabular-nums text-red-400">{s.damageTaken || "-"}</td>
                         <td className="px-2 py-1 text-right tabular-nums text-yellow-400">{s.energySpent || "-"}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{s.skillsUsed || "-"}</td>
@@ -3710,6 +3836,7 @@ export default function BattlefieldPage() {
               // Roll attacker's miss chance per target (skipped by guaranteed hit)
               if (!hasGuaranteedHit && attackerMissPct > 0 && Math.random() * 100 < attackerMissPct) {
                 addBattleLog(`${attackerName}'s attack missed ${getCharacter(entry.targetId)?.name ?? "Unknown"}! (${attackerMissPct}% miss chance)`);
+                spawnFloat(entry.targetId, "MISS", "text-gray-400");
                 return { ...entry, amount: 0, newHp: currentHpMap[entry.targetId] ?? 100 };
               }
               // Roll defender's dodge chance
@@ -3729,6 +3856,7 @@ export default function BattlefieldPage() {
               }
               if (!hasGuaranteedHit && dodgePct > 0 && Math.random() * 100 < dodgePct) {
                 addBattleLog(`${getCharacter(entry.targetId)?.name ?? "Unknown"} dodged ${attackerName}'s attack! (${dodgePct}% dodge chance)`);
+                spawnFloat(entry.targetId, "DODGE", "text-yellow-300");
                 return { ...entry, amount: 0, newHp: currentHpMap[entry.targetId] ?? 100 };
               }
               return entry;
@@ -3846,6 +3974,7 @@ export default function BattlefieldPage() {
                     // Independent miss roll
                     if (attackerMissPct > 0 && Math.random() * 100 < attackerMissPct) {
                       addBattleLog(`${attackerName}'s attack missed ${getCharacter(origEntry.targetId)?.name ?? "Unknown"}! (${attackerMissPct}% miss chance)`);
+                      spawnFloat(origEntry.targetId, "MISS", "text-gray-400");
                       extraHitEntries.push({ ...origEntry, amount: 0, newHp: currentHpMapRef.current[origEntry.targetId] ?? origEntry.newHp });
                       continue;
                     }
@@ -3866,6 +3995,7 @@ export default function BattlefieldPage() {
                     }
                     if (dodgePct > 0 && Math.random() * 100 < dodgePct) {
                       addBattleLog(`${getCharacter(origEntry.targetId)?.name ?? "Unknown"} dodged ${attackerName}'s attack! (${dodgePct}% dodge chance)`);
+                      spawnFloat(origEntry.targetId, "DODGE", "text-yellow-300");
                       extraHitEntries.push({ ...origEntry, amount: 0, newHp: currentHpMapRef.current[origEntry.targetId] ?? origEntry.newHp });
                       continue;
                     }
@@ -4120,6 +4250,22 @@ export default function BattlefieldPage() {
             };
             applyMovementsTimingPhase("before-damage");
 
+            // Invincibility: zero out damage for targets with the invincible tag.
+            // The entry stays in the list so effects (debuffs, movements, etc.) still apply.
+            for (let ei = 0; ei < redirectedEntries.length; ei++) {
+              const entry = redirectedEntries[ei];
+              if (entry.isHealing || entry.amount <= 0) continue;
+              const targetBuffs = buffsMap[entry.targetId] ?? [];
+              const isInvincible = targetBuffs.some((b) => b.tags?.some((t) => t.type === "invincible"));
+              if (isInvincible) {
+                const tName = getCharacter(entry.targetId)?.name ?? "Unknown";
+                addBattleLog(`${tName} is invincible — takes no damage!`);
+                spawnFloat(entry.targetId, "IMMUNE", "text-cyan-300");
+                const curHp = currentHpMapRef.current[entry.targetId] ?? (getCharacter(entry.targetId)?.stats.hp ?? 0);
+                redirectedEntries[ei] = { ...entry, amount: 0, newHp: curHp };
+              }
+            }
+
             // --- Attack choreography ---
             // Attacker slingshot animation (only for damaging hits with at least one target).
             const attackerSide = activeCharId ? teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side : undefined;
@@ -4131,14 +4277,80 @@ export default function BattlefieldPage() {
             }
             // Delay the HP apply + defender recoil + floating numbers to land at the peak of the lunge.
             const applyHit = () => {
+              const isRevive = !!skillUsed.levels[lvlIdx]?.revive;
+              // Separate shielding entries from HP entries
+              const shieldEntries: { targetId: string; amount: number }[] = [];
+              const hpEntries: typeof redirectedEntries = [];
+              for (const entry of redirectedEntries) {
+                if (entry.isHealing && entry.category === "shielding") {
+                  shieldEntries.push({ targetId: entry.targetId, amount: entry.amount });
+                } else {
+                  hpEntries.push(entry);
+                }
+              }
+              // Apply shields
+              if (shieldEntries.length > 0) {
+                setShieldMap((prev) => {
+                  const next = { ...prev };
+                  for (const se of shieldEntries) {
+                    next[se.targetId] = (next[se.targetId] ?? 0) + se.amount;
+                  }
+                  return next;
+                });
+              }
+              // Apply HP changes — damage absorbs from shield first
+              const shieldSnap = { ...shieldMap };
+              // Account for shields just applied in this same hit
+              for (const se of shieldEntries) {
+                shieldSnap[se.targetId] = (shieldSnap[se.targetId] ?? 0) + se.amount;
+              }
+              const shieldUpdates: Record<string, number> = {};
               setCurrentHpMap((prev) => {
                 const next = { ...prev };
-                for (const { targetId, newHp } of redirectedEntries) {
-                  next[targetId] = newHp;
+                for (const entry of hpEntries) {
+                  if (isRevive && entry.isHealing && (prev[entry.targetId] ?? 0) <= 0) {
+                    const maxHp = getCharacter(entry.targetId)?.stats.hp ?? 1;
+                    next[entry.targetId] = Math.min(maxHp, 1 + entry.amount);
+                  } else if (entry.isHealing && (prev[entry.targetId] ?? 0) <= 0) {
+                    continue; // Non-revive healing on dead: no effect
+                  } else if (!entry.isHealing && entry.amount > 0) {
+                    // Damage: absorb from shield first, overflow to HP
+                    const currentShield = shieldSnap[entry.targetId] ?? 0;
+                    if (currentShield > 0) {
+                      const shieldAbsorb = Math.min(currentShield, entry.amount);
+                      const hpDamage = entry.amount - shieldAbsorb;
+                      shieldSnap[entry.targetId] = currentShield - shieldAbsorb;
+                      shieldUpdates[entry.targetId] = shieldSnap[entry.targetId];
+                      const curHp = prev[entry.targetId] ?? (getCharacter(entry.targetId)?.stats.hp ?? 0);
+                      next[entry.targetId] = Math.max(0, curHp - hpDamage);
+                      if (shieldAbsorb > 0) {
+                        spawnFloat(entry.targetId, `SHIELD -${shieldAbsorb}`, "text-blue-300");
+                      }
+                    } else {
+                      next[entry.targetId] = entry.newHp;
+                    }
+                  } else {
+                    next[entry.targetId] = entry.newHp;
+                  }
                 }
                 return next;
               });
-              for (const entry of redirectedEntries) {
+              // Update shield map for absorbed damage
+              if (Object.keys(shieldUpdates).length > 0) {
+                setShieldMap((prev) => {
+                  const next = { ...prev };
+                  for (const [cid, val] of Object.entries(shieldUpdates)) {
+                    if (val <= 0) delete next[cid];
+                    else next[cid] = val;
+                  }
+                  return next;
+                });
+              }
+              // Spawn floats for shield entries
+              for (const se of shieldEntries) {
+                if (se.amount > 0) spawnFloat(se.targetId, `+${se.amount} SHIELD`, "text-blue-300");
+              }
+              for (const entry of hpEntries) {
                 if (entry.amount <= 0) continue;
                 spawnDamageFloat(entry.targetId, entry.amount, entry.isHealing);
                 if (!entry.isHealing) {
@@ -4149,9 +4361,13 @@ export default function BattlefieldPage() {
                   }
                 }
               }
+              // Track battle stats: shielding
+              for (const se of shieldEntries) {
+                if (se.amount > 0 && activeCharId) addBattleStat(activeCharId, "shieldingDone", se.amount);
+              }
               // Track battle stats for each entry
               const primarySourceCat = getAttackCategory(level?.targetType, level?.damageSourceOverride);
-              for (const entry of redirectedEntries) {
+              for (const entry of hpEntries) {
                 if (entry.amount <= 0) continue;
                 if (entry.isHealing) {
                   if (activeCharId) addBattleStat(activeCharId, "healingDone", entry.amount);
@@ -4549,6 +4765,30 @@ export default function BattlefieldPage() {
               addBattleLog(`${attackerName}'s stolen energy count is reset.`);
             }
 
+            // Consume caster stacks (e.g. Aerith spending Limit stacks on a conditional)
+            const consumeStacks = skillUsed.levels[lvlIdx]?.consumesCasterStacks;
+            if (consumeStacks && activeCharId) {
+              // Skip consumption if caster has the skipIfStatus active (e.g. Limit Break status = free use)
+              const skipBecauseStatus = consumeStacks.skipIfStatus
+                ? (buffsMap[activeCharId] ?? []).some((b) => b.effectId === consumeStacks.skipIfStatus)
+                : false;
+              if (!skipBecauseStatus) {
+                setBuffsMap((prev) => {
+                  const list = prev[activeCharId] ?? [];
+                  const updated = list.map((b) => {
+                    if (b.effectId !== consumeStacks.effectId) return b;
+                    const curStacks = b.stacks ?? 1;
+                    const newStacks = curStacks - consumeStacks.count;
+                    if (newStacks <= 0) return null; // remove entirely
+                    return { ...b, stacks: newStacks };
+                  }).filter(Boolean) as typeof list;
+                  return { ...prev, [activeCharId]: updated };
+                });
+                const effectName = statusEffects.find((se) => se.id === consumeStacks.effectId)?.name ?? "stacks";
+                addBattleLog(`${attackerName} consumes ${consumeStacks.count} ${effectName} stack${consumeStacks.count > 1 ? "s" : ""}.`);
+              }
+            }
+
             // Counter attacks: defenders with the "counter" tag retaliate with their basic attack
             if (activeCharId && level?.damageCategory && (level.damageCategory === "physical" || level.damageCategory === "magical")) {
               const skillCat = level.damageCategory;
@@ -4626,6 +4866,7 @@ export default function BattlefieldPage() {
                   }
                   if (counterDodge > 0 && Math.random() * 100 < counterDodge) {
                     addBattleLog(`${attackerChar.name} dodged ${defenderChar.name}'s counter${counterHits > 1 ? ` (hit ${ci + 1})` : ""}! (${counterDodge}% dodge chance)`);
+                    spawnFloat(activeCharId, "DODGE", "text-yellow-300");
                     continue;
                   }
                   const updatedCounterDefender = { ...counterDefender, currentHp: runningAttackerHp };
@@ -4686,6 +4927,7 @@ function BattleDetailsPanel({
   onAddBuff,
   onRemoveBuff,
   canAffordSkill,
+  shieldMap,
   onClose,
 }: {
   characterId: string;
@@ -4707,6 +4949,7 @@ function BattleDetailsPanel({
   onAddBuff: (charId: string, buff: Omit<BuffDebuff, "id">) => void;
   onRemoveBuff: (charId: string, buffId: string) => void;
   canAffordSkill?: (skillId: string) => boolean;
+  shieldMap?: Record<string, number>;
   onClose: () => void;
 }) {
   const char = getCharacter(characterId);
@@ -4764,10 +5007,15 @@ function BattleDetailsPanel({
               <span className="text-[10px] text-gray-500">{panelType}</span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden relative">
                 <div className={`h-full ${hpColor} rounded-full`} style={{ width: `${hpPct}%` }} />
+                {(shieldMap?.[characterId] ?? 0) > 0 && (
+                  <div className="absolute top-0 left-0 h-full bg-blue-400/60 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, ((shieldMap![characterId] + currentHp) / maxHp) * 100)}%` }} />
+                )}
               </div>
-              <span className="text-[10px] text-gray-400 tabular-nums">{currentHp}/{maxHp}</span>
+              <span className="text-[10px] text-gray-400 tabular-nums">
+                {(shieldMap?.[characterId] ?? 0) > 0 && <span className="text-blue-300">+{shieldMap![characterId]} </span>}{currentHp}/{maxHp}
+              </span>
               <div className="flex gap-0.5 ml-1">
                 {panelEnergy.map((eg) => Array.from({ length: eg.amount }).map((_, j) => (
                   <EnergyBadge key={`${eg.color}-${j}`} color={eg.color} />

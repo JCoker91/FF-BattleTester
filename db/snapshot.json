@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-04-10T18:43:11.314Z",
+  "exportedAt": "2026-04-10T21:55:13.194Z",
   "tables": {
     "characters": [
       {
@@ -171,13 +171,13 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":null,\"basicId\":null,\"abilityIds\":[]}",
+        "equipped_loadouts": "{\"innateId\":\"8e6632d5-dda7-4983-871c-eca4a0d7e1fa\",\"basicId\":\"b0ad67b1-f274-4b29-b484-92c4d9af0334\",\"abilityIds\":[\"e18aa722-e925-4ab4-b06f-e4a9d98d1085\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
-        "gender": null,
+        "gender": "female",
         "hp_scaled_v1": 1,
-        "show_in_bench": 0
+        "show_in_bench": 1
       },
       {
         "id": "a1c80138-c5ae-4daf-929e-d9f817d5f012",
@@ -798,21 +798,6 @@
         "startable": 1
       },
       {
-        "id": "d356b056-c098-4316-a0ad-a850a2e9a500",
-        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
-        "name": "Base",
-        "sort_order": 0,
-        "photo_url": null,
-        "type_override": null,
-        "energy_override": null,
-        "summary": null,
-        "stat_overrides": null,
-        "elemental_res_override": null,
-        "elemental_dmg_override": null,
-        "status_resistance_override": null,
-        "startable": 1
-      },
-      {
         "id": "ccb285ee-db00-4971-920e-d6f9cdec0990",
         "character_id": "a1c80138-c5ae-4daf-929e-d9f817d5f012",
         "name": "Base",
@@ -1390,7 +1375,7 @@
       {
         "id": "6a4e60ba-4ad2-443d-a785-861f72b8bb52",
         "name": "Cure",
-        "levels": "[{\"description\":\"Heal an ally a **moderate** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"healing\",\"damageTier\":\"moderate\",\"targetType\":\"target-ally-or-self\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Heal an ally a **moderate** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"healing\",\"damageTier\":\"moderate\",\"targetType\":\"target-ally-or-self\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1402,7 +1387,7 @@
       {
         "id": "6c02e163-8614-4800-aad0-2163143b230f",
         "name": "Dispel",
-        "levels": "[{\"description\":\"Remove all buffs from a target enemy.\",\"cost\":[{\"color\":\"purple\",\"amount\":1}],\"targetType\":\"target-enemy\",\"dispels\":[{\"category\":\"buff\",\"count\":-1,\"targetType\":\"target-enemy\"}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Remove all buffs from a target enemy.\",\"cost\":[{\"color\":\"purple\",\"amount\":1}],\"targetType\":\"target-enemy\",\"dispels\":[{\"category\":\"buff\",\"count\":-1,\"targetType\":\"target-enemy\"}],\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1414,7 +1399,7 @@
       {
         "id": "862c32d9-c532-4108-a861-7cb149bf5f61",
         "name": "Shell",
-        "levels": "[{\"description\":\"Reduces [[magical-damage]] taken by target ally by **20%** for **3** turns. \",\"cost\":[{\"color\":\"blue\",\"amount\":1}],\"targetType\":\"target-ally-or-self\",\"effects\":[{\"effectId\":\"b0e9b839-bd02-437e-936d-ec5c0937be8e\",\"targetType\":\"target-ally-or-self\",\"modifier\":20,\"duration\":3}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Reduces [[magical-damage]] taken by target ally by **20%** for **3** turns. \",\"cost\":[{\"color\":\"blue\",\"amount\":1}],\"targetType\":\"target-ally-or-self\",\"effects\":[{\"effectId\":\"b0e9b839-bd02-437e-936d-ec5c0937be8e\",\"targetType\":\"target-ally-or-self\",\"modifier\":20,\"duration\":3}],\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1438,7 +1423,7 @@
       {
         "id": "f7c37c97-a736-4f32-92be-ac462ba6b5a9",
         "name": "Cura",
-        "levels": "[{\"description\":\"Heal all allies a **low** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"low\",\"targetType\":\"aoe-team\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Heal all allies a **low** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"low\",\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1450,7 +1435,7 @@
       {
         "id": "715cbdb4-1bac-4d9d-be23-5ab43c9b4727",
         "name": "Esuna",
-        "levels": "[{\"description\":\"Remove all negative effects from a target ally.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"targetType\":\"target-ally-or-self\",\"dispels\":[{\"category\":\"debuff\",\"count\":-1,\"targetType\":\"target-ally-or-self\"}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Remove all negative effects from a target ally.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"targetType\":\"target-ally-or-self\",\"dispels\":[{\"category\":\"debuff\",\"count\":-1,\"targetType\":\"target-ally-or-self\"}],\"rangeTags\":[\"ranged\",\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1462,7 +1447,7 @@
       {
         "id": "51c10bca-aab4-4941-8827-f61379664ae7",
         "name": "Shellga",
-        "levels": "[{\"description\":\"Reduces [[magical-damage]] taken by all allies by **20%** for **3** turns. \",\"cost\":[{\"color\":\"blue\",\"amount\":2},{\"color\":\"green\",\"amount\":1}],\"targetType\":\"aoe-team\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Reduces [[magical-damage]] taken by all allies by **20%** for **3** turns. \",\"cost\":[{\"color\":\"blue\",\"amount\":2},{\"color\":\"green\",\"amount\":1}],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"b0e9b839-bd02-437e-936d-ec5c0937be8e\",\"targetType\":\"aoe-team\",\"modifier\":20,\"duration\":3}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1474,7 +1459,7 @@
       {
         "id": "e70e9d84-ad38-4ef5-9b89-a329b886f463",
         "name": "Protectga",
-        "levels": "[{\"description\":\"Reduces [[physical-damage]] taken by all allies by **20%** for **3** turns. \",\"cost\":[{\"color\":\"blue\",\"amount\":2},{\"color\":\"green\",\"amount\":1}],\"targetType\":\"aoe-team\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Reduces [[physical-damage]] taken by all allies by **20%** for **3** turns. \",\"cost\":[{\"color\":\"blue\",\"amount\":2},{\"color\":\"green\",\"amount\":1}],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"50ed19c0-389c-48da-9bc2-853ee62ae5c1\",\"targetType\":\"aoe-team\",\"modifier\":20,\"duration\":3}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1486,7 +1471,7 @@
       {
         "id": "cd2cbeb4-32af-4907-83d6-d7290b50aa08",
         "name": "Curaga",
-        "levels": "[{\"description\":\"Heals a target ally a **high** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"high\",\"targetType\":\"target-ally-or-self\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Heals a target ally a **high** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"high\",\"targetType\":\"target-ally-or-self\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1498,7 +1483,7 @@
       {
         "id": "9f2fe580-1ad0-43ce-a281-2337359d91d6",
         "name": "Regen",
-        "levels": "[{\"description\":\"Grants an ally [[regen-buff]] for **5** turns.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"targetType\":\"target-ally-or-self\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Grants an ally [[regen-buff]] for **5** turns.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"targetType\":\"target-ally-or-self\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"a767d837-c922-4c1a-8410-0fafffa25362\",\"targetType\":\"target-ally-or-self\",\"modifier\":20,\"duration\":5}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1510,7 +1495,7 @@
       {
         "id": "5a63c9a2-731f-43d4-b019-6a95776d7ac0",
         "name": "Esunaga",
-        "levels": "[{\"description\":\"Removes negative status affects from all allies.\",\"cost\":[{\"color\":\"green\",\"amount\":3}],\"targetType\":\"aoe-team\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Removes negative status affects from all allies.\",\"cost\":[{\"color\":\"green\",\"amount\":3}],\"targetType\":\"aoe-team\",\"dispels\":[{\"category\":\"debuff\",\"count\":-1,\"targetType\":\"aoe-team\"}],\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1522,7 +1507,7 @@
       {
         "id": "3f819037-b40c-440e-afdf-8d6105dbfbcd",
         "name": "Raise",
-        "levels": "[{\"description\":\"Revives a fallen ally with a **minor** amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"minor\",\"targetType\":\"target-ally\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Revives a fallen ally with a **minor** amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"minor\",\"targetType\":\"fallen-ally\",\"rangeTags\":[\"magic\"],\"revive\":true},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -1546,7 +1531,7 @@
       {
         "id": "0c24ef41-d083-42de-a15a-5cdc97edc110",
         "name": "Holy",
-        "levels": "[{\"description\":\"Deals **high** [[magical-damage]], [[holy-damage]], [[direct-damage]] to a target enemy based off of [[SPI]].\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"damageTier\":\"high\",\"element\":\"light\",\"targetType\":\"target-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Deals **high** [[magical-damage]], [[holy-damage]], [[direct-damage]] to a target enemy based off of [[SPI]].\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"damageTier\":\"high\",\"element\":\"light\",\"targetType\":\"target-enemy\",\"offensiveStatOverride\":\"spi\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
@@ -2117,6 +2102,102 @@
         "variant_group_id": null,
         "leveled": 1,
         "description": "Deal damage and pull enemy closer.",
+        "template_id": null
+      },
+      {
+        "id": "e898c8b5-e33b-4b58-b920-4e3867c61e6f",
+        "name": "Healing Wind",
+        "levels": "[{\"description\":\"Heals all allies a **moderate** amount.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"damageCategory\":\"healing\",\"requiresMinStacks\":{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"count\":2},\"consumesCasterStacks\":{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"count\":2,\"skipIfStatus\":\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"},\"requiresAnyStatus\":[\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "conditional",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Heals all allies",
+        "template_id": null
+      },
+      {
+        "id": "05758e49-c2b4-4e09-badc-688a0dff02c0",
+        "name": "Seal Evil",
+        "levels": "[{\"description\":\"Inflict [[silence]] on all enemies for **1** turn with a **50%** chance.\",\"cost\":[{\"color\":\"purple\",\"amount\":2}],\"rangeTags\":[\"magic\"],\"targetType\":\"aoe-enemy\",\"effects\":[{\"effectId\":\"03ddbf9b-1442-4721-ad0c-93831b9bbf7d\",\"targetType\":\"aoe-enemy\",\"modifier\":20,\"duration\":1,\"chance\":50}],\"requiresAnyStatus\":[\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"],\"requiresMinStacks\":{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"count\":3},\"consumesCasterStacks\":{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"count\":3,\"skipIfStatus\":\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"}},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "conditional",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Silences all enemies.",
+        "template_id": null
+      },
+      {
+        "id": "5a7f7417-db92-4c03-b5d7-1440a13f07b7",
+        "name": "Planet Protector",
+        "levels": "[{\"description\":\"Increases [[physical-resistance]] and [[magical-resistance]] for all allies by **30%** for **5** turns.\",\"cost\":[{\"color\":\"blue\",\"amount\":2},{\"color\":\"green\",\"amount\":1}],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"b0e9b839-bd02-437e-936d-ec5c0937be8e\",\"targetType\":\"aoe-team\",\"modifier\":30,\"duration\":5},{\"effectId\":\"50ed19c0-389c-48da-9bc2-853ee62ae5c1\",\"targetType\":\"aoe-team\",\"modifier\":30,\"duration\":5}],\"requiresAnyStatus\":[\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"],\"requiresMinStacks\":{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"count\":4},\"consumesCasterStacks\":{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"count\":4,\"skipIfStatus\":\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"}},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "conditional",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Reduce damage taken for allies.",
+        "template_id": null
+      },
+      {
+        "id": "4b72d017-4d3e-42a4-a05a-665341a69496",
+        "name": "Great Gospel",
+        "levels": "[{\"description\":\"Heals all allies a **high** amount and grants [[invincibility-status]] for **1** turn. \",\"cost\":[{\"color\":\"blue\",\"amount\":2},{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"high\",\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"dedc80b1-f2fc-42f0-815d-48455d132d9d\",\"targetType\":\"aoe-team\",\"modifier\":20,\"duration\":2,\"untilNextTurn\":true}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "conditional",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Heals all allies and grants invincibility .",
+        "template_id": null
+      },
+      {
+        "id": "e38024db-f0c9-4bf0-8492-674da8b04c4d",
+        "name": "Centra's Prayer",
+        "levels": "[{\"description\":\"Gains a [[limit-buff]] stack the the start of the turn.\",\"cost\":[],\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":2,\"trigger\":\"turn-start\"}],\"passive\":true},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "innate",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Gains Limit stacks during battle.",
+        "template_id": null
+      },
+      {
+        "id": "b0ad67b1-f274-4b29-b484-92c4d9af0334",
+        "name": "Healing Touch",
+        "levels": "[{\"description\":\"Heals an ally a **low** amount.\",\"cost\":[],\"damageCategory\":\"healing\",\"damageTier\":\"low\",\"targetType\":\"target-ally-or-self\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "basic",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Heals an ally.",
+        "template_id": null
+      },
+      {
+        "id": "8e6632d5-dda7-4983-871c-eca4a0d7e1fa",
+        "name": "Aegis Ward",
+        "levels": "[{\"description\":\"Grants a **low** amount of shield to the lowest HP ally on turn start.\",\"cost\":[],\"damageCategory\":\"shielding\",\"passive\":true,\"targetType\":\"lowest-hp-ally\",\"damageTier\":\"low\",\"damageTrigger\":\"turn-start\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "innate",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Grants shields to low HP allies.",
+        "template_id": null
+      },
+      {
+        "id": "85a61b24-6942-4daf-924a-ff2df545b364",
+        "name": "Pray",
+        "levels": "[{\"description\":\"Heals the party a random amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"random\",\"randomTierPool\":[\"minor\",\"low\",\"moderate\"],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 1,
+        "description": "Heals the party a random amount.",
         "template_id": null
       }
     ],
@@ -2867,6 +2948,96 @@
         "variant_group_id": null,
         "conditions": null,
         "status_condition_id": null
+      },
+      {
+        "id": "5820db91-dd7e-490d-9779-94d04bea9681",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "e898c8b5-e33b-4b58-b920-4e3867c61e6f",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "454d9d4f-a786-4fcc-a99e-9a428c855d8a",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "05758e49-c2b4-4e09-badc-688a0dff02c0",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "6f25b50f-4e25-4619-a36c-ca3f06452337",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "5a7f7417-db92-4c03-b5d7-1440a13f07b7",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "47cebca5-4076-4656-bb80-d2f9d935064d",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "4b72d017-4d3e-42a4-a05a-665341a69496",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": "[{\"type\":\"status\",\"value\":\"2d0e00f3-e67e-48c4-b73f-55491cc6ff75\"}]",
+        "status_condition_id": null
+      },
+      {
+        "id": "e6bc4bbe-e2f9-4abe-b144-4aae4e63c9d7",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "e18aa722-e925-4ab4-b06f-e4a9d98d1085",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "47cee1f3-eaa0-4876-b7d8-93b0f9398007",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "e38024db-f0c9-4bf0-8492-674da8b04c4d",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "41aee907-af42-4b89-93b8-3da5d1c36c18",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "55b2b785-c93a-48e9-a7da-420eda2352f0",
+        "form_id": "eab4bd0f-420b-4c23-807a-e0d7c5bdaab2",
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "797905c6-0dda-4f2b-b0d9-3ab8f95765bc",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "b0ad67b1-f274-4b29-b484-92c4d9af0334",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "a548e6da-706f-4081-aca9-c0a2bf131c73",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "8e6632d5-dda7-4983-871c-eca4a0d7e1fa",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "e87afba1-16e2-4926-a4c7-51bea50d719b",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "85a61b24-6942-4daf-924a-ff2df545b364",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
       }
     ],
     "skill_templates": [
@@ -3589,6 +3760,12 @@
         "keyword": "physical-resistance",
         "label": "Physical",
         "description": "Determines physical damage received."
+      },
+      {
+        "id": "978d2f1b-4282-40d8-b8dc-cfd322c5016b",
+        "keyword": "magical-resistance",
+        "label": "Magical",
+        "description": "Determines magic damage received."
       }
     ],
     "teams": [
@@ -3596,13 +3773,13 @@
         "id": "team-left",
         "name": "Team A",
         "side": "left",
-        "placements": "[{\"characterId\":\"4972d77e-87b0-403c-9d2a-04481075dda6\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":1,\"col\":2}},{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":0,\"col\":2}}]"
+        "placements": "[{\"characterId\":\"1db2359a-4b33-47f8-a8ab-ba50bba99880\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":0,\"col\":1}}]"
       },
       {
         "id": "team-right",
         "name": "Team B",
         "side": "right",
-        "placements": "[{\"characterId\":\"f18458e1-4483-4a88-94b5-05995a0dcd6a\",\"position\":{\"row\":2,\"col\":1}},{\"characterId\":\"de395cae-5f23-4158-aa45-50e6c7ea68a1\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"de1af1db-2d4e-411f-9dab-ca406dc0ad9b\",\"position\":{\"row\":0,\"col\":0}}]"
+        "placements": "[{\"characterId\":\"de395cae-5f23-4158-aa45-50e6c7ea68a1\",\"position\":{\"row\":1,\"col\":1}}]"
       }
     ],
     "status_effects": [
@@ -4506,6 +4683,40 @@
         "form_id": null,
         "dispellable": 0,
         "polarity": null
+      },
+      {
+        "id": "dedc80b1-f2fc-42f0-815d-48455d132d9d",
+        "name": "Invincible",
+        "category": "status",
+        "stat": "none",
+        "default_modifier": null,
+        "stackable": 0,
+        "max_stacks": null,
+        "on_max_stacks": null,
+        "resistable": 0,
+        "stats": "[\"none\"]",
+        "behavior": null,
+        "tags": "[{\"type\":\"invincible\",\"params\":{}}]",
+        "form_id": null,
+        "dispellable": 1,
+        "polarity": "positive"
+      },
+      {
+        "id": "a767d837-c922-4c1a-8410-0fafffa25362",
+        "name": "Regen",
+        "category": "status",
+        "stat": "none",
+        "default_modifier": null,
+        "stackable": 0,
+        "max_stacks": null,
+        "on_max_stacks": null,
+        "resistable": 0,
+        "stats": "[\"none\"]",
+        "behavior": null,
+        "tags": "[{\"type\":\"hot\",\"params\":{\"percent\":10}}]",
+        "form_id": null,
+        "dispellable": 1,
+        "polarity": "positive"
       }
     ],
     "effect_tag_types": [
@@ -4684,6 +4895,22 @@
         "description": "Attacks from the holder bypass miss-chance, dodge-chance, and cover redirect.",
         "param_schema": "{\"filter\":{\"type\":\"enum\",\"label\":\"Attack Filter\",\"default\":\"any\",\"options\":[\"direct\",\"indirect\",\"aoe\",\"any\"]}}",
         "sort_order": 22
+      },
+      {
+        "id": "c63cdf3d-2dd5-4539-9c84-bf26ff6f37a4",
+        "name": "invincible",
+        "label": "Invincible",
+        "description": "The holder takes no damage from any source. Effects (debuffs, movements, etc.) from attacks still apply normally — only the damage number is zeroed out.",
+        "param_schema": "{}",
+        "sort_order": 23
+      },
+      {
+        "id": "3c69b8a1-a2d3-4ae3-9f12-4ac8fdae075b",
+        "name": "auto-revive",
+        "label": "Auto-Revive",
+        "description": "When the holder is defeated, they are automatically revived with a percentage of their max HP. The buff is consumed on trigger.",
+        "param_schema": "{\"hpPercent\":{\"type\":\"number\",\"label\":\"Revive HP %\",\"default\":25}}",
+        "sort_order": 24
       }
     ]
   }

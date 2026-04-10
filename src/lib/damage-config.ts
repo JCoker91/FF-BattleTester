@@ -21,7 +21,7 @@ export const DAMAGE_MULTIPLIERS: Record<DamageTier, number> = {
   massive: 2.5,
 };
 
-export const DAMAGE_CATEGORIES = ["physical", "magical", "true", "healing"] as const;
+export const DAMAGE_CATEGORIES = ["physical", "magical", "true", "healing", "shielding"] as const;
 export type DamageCategory = (typeof DAMAGE_CATEGORIES)[number];
 
 export const DAMAGE_CATEGORY_LABELS: Record<DamageCategory, string> = {
@@ -29,6 +29,7 @@ export const DAMAGE_CATEGORY_LABELS: Record<DamageCategory, string> = {
   magical: "Magical",
   true: "True",
   healing: "Healing",
+  shielding: "Shielding",
 };
 
 export const BASE_POWER = 100;

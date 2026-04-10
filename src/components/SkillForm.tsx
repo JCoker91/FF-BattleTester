@@ -1264,6 +1264,38 @@ export function SkillForm({
                     </select>
                   </div>
                 )}
+                {level.damageCategory && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Stat:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                      value={level.offensiveStatOverride ?? ""}
+                      onChange={(e) => updateLevel(i, { offensiveStatOverride: (e.target.value || undefined) as SkillLevel["offensiveStatOverride"] })}
+                      title="Override which attacker stat scales damage"
+                    >
+                      <option value="">Default</option>
+                      <option value="atk">ATK</option>
+                      <option value="mAtk">MATK</option>
+                      <option value="def">DEF</option>
+                      <option value="spi">SPI</option>
+                      <option value="spd">SPD</option>
+                    </select>
+                  </div>
+                )}
+                {level.damageCategory && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500">Trigger:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                      value={level.damageTrigger ?? "on-use"}
+                      onChange={(e) => updateLevel(i, { damageTrigger: (e.target.value === "on-use" ? undefined : e.target.value) as SkillLevel["damageTrigger"] })}
+                      title="When the damage/healing/shielding resolves"
+                    >
+                      <option value="on-use">On Use</option>
+                      <option value="turn-start">Turn Start</option>
+                    </select>
+                  </div>
+                )}
                 {level.damageCategory && level.damageTier === "random" && (
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="text-[10px] text-gray-500">Pool:</span>
@@ -1404,6 +1436,14 @@ export function SkillForm({
                   />
                   <span className="text-[10px] text-gray-500">Guaranteed Hit</span>
                 </label>
+                <label className="flex items-center gap-1 cursor-pointer" title="Revive: targets at 0 HP are set to 1 HP before healing applies. Use with fallen-ally targeting.">
+                  <input
+                    type="checkbox"
+                    checked={!!level.revive}
+                    onChange={(e) => updateLevel(i, { revive: e.target.checked || undefined })}
+                  />
+                  <span className="text-[10px] text-gray-500">Revive</span>
+                </label>
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-red-400">HP Cost:</span>
                   <input
@@ -1463,7 +1503,7 @@ export function SkillForm({
             {/* --- DAMAGE RIDERS --- */}
             <CollapsibleSection
               title="Damage Riders"
-              hasContent={!!(level.casterMissingHpScaling || level.giantSlayerMaxBonus || level.executeBonus || level.bonusHpDamage || level.splashHit || level.bonusDamageVsStatus || level.stolenEnergyScaling || level.consumesCasterImbue || level.requiresAnyStatus?.length)}
+              hasContent={!!(level.casterMissingHpScaling || level.giantSlayerMaxBonus || level.executeBonus || level.bonusHpDamage || level.splashHit || level.bonusDamageVsStatus || level.stolenEnergyScaling || level.consumesCasterImbue || level.requiresAnyStatus?.length || level.requiresMinStacks || level.consumesCasterStacks)}
             >
               <div className="flex gap-2 items-center flex-wrap">
                 <span className="text-[10px] text-gray-500">HP Scaling:</span>
@@ -1715,6 +1755,77 @@ export function SkillForm({
                   })}
                 </div>
               </div>
+              {/* Requires min stacks */}
+              <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                <span className="text-gray-500 shrink-0">Requires min stacks:</span>
+                <select
+                  className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none max-w-[130px]"
+                  value={level.requiresMinStacks?.effectId ?? ""}
+                  onChange={(e) => {
+                    const eid = e.target.value;
+                    updateLevel(i, { requiresMinStacks: eid ? { effectId: eid, count: level.requiresMinStacks?.count ?? 2 } : undefined });
+                  }}
+                >
+                  <option value="">-- None --</option>
+                  {statusEffects.filter((se) => se.stackable).map((se) => (
+                    <option key={se.id} value={se.id}>{se.name}</option>
+                  ))}
+                </select>
+                {level.requiresMinStacks && (
+                  <>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      className="w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                      value={level.requiresMinStacks.count}
+                      onChange={(e) => updateLevel(i, { requiresMinStacks: { ...level.requiresMinStacks!, count: Math.max(1, parseInt(e.target.value) || 1) } })}
+                    />
+                    <span>stacks</span>
+                  </>
+                )}
+              </div>
+              {/* Consume caster stacks on use */}
+              <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                <span className="text-gray-500 shrink-0">Consume stacks:</span>
+                <select
+                  className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none max-w-[130px]"
+                  value={level.consumesCasterStacks?.effectId ?? ""}
+                  onChange={(e) => {
+                    const eid = e.target.value;
+                    updateLevel(i, { consumesCasterStacks: eid ? { effectId: eid, count: level.consumesCasterStacks?.count ?? 1, skipIfStatus: level.consumesCasterStacks?.skipIfStatus } : undefined });
+                  }}
+                >
+                  <option value="">-- None --</option>
+                  {statusEffects.filter((se) => se.stackable).map((se) => (
+                    <option key={se.id} value={se.id}>{se.name}</option>
+                  ))}
+                </select>
+                {level.consumesCasterStacks && (
+                  <>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      className="w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none"
+                      value={level.consumesCasterStacks.count}
+                      onChange={(e) => updateLevel(i, { consumesCasterStacks: { ...level.consumesCasterStacks!, count: Math.max(1, parseInt(e.target.value) || 1) } })}
+                    />
+                    <span>stacks</span>
+                    <span className="text-gray-500 ml-1 shrink-0">Skip if:</span>
+                    <select
+                      className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-white text-[10px] focus:outline-none max-w-[130px]"
+                      value={level.consumesCasterStacks.skipIfStatus ?? ""}
+                      onChange={(e) => updateLevel(i, { consumesCasterStacks: { ...level.consumesCasterStacks!, skipIfStatus: e.target.value || undefined } })}
+                    >
+                      <option value="">-- Always consume --</option>
+                      {statusEffects.map((se) => (
+                        <option key={se.id} value={se.id}>{se.name}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
             </CollapsibleSection>
 
             {/* --- EFFECTS --- */}
@@ -1869,6 +1980,38 @@ export function SkillForm({
                     {DAMAGE_TIERS.map((t) => (
                       <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
                     ))}
+                  </select>
+                </div>
+              )}
+              {form.levels[0].damageCategory && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Stat:</span>
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                    value={form.levels[0].offensiveStatOverride ?? ""}
+                    onChange={(e) => updateLevel(0, { offensiveStatOverride: (e.target.value || undefined) as SkillLevel["offensiveStatOverride"] })}
+                    title="Override which attacker stat scales damage"
+                  >
+                    <option value="">Default</option>
+                    <option value="atk">ATK</option>
+                    <option value="mAtk">MATK</option>
+                    <option value="def">DEF</option>
+                    <option value="spi">SPI</option>
+                    <option value="spd">SPD</option>
+                  </select>
+                </div>
+              )}
+              {form.levels[0].damageCategory && (
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-500">Trigger:</span>
+                  <select
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500"
+                    value={form.levels[0].damageTrigger ?? "on-use"}
+                    onChange={(e) => updateLevel(0, { damageTrigger: (e.target.value === "on-use" ? undefined : e.target.value) as SkillLevel["damageTrigger"] })}
+                    title="When the damage/healing/shielding resolves"
+                  >
+                    <option value="on-use">On Use</option>
+                    <option value="turn-start">Turn Start</option>
                   </select>
                 </div>
               )}

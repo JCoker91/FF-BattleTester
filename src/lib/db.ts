@@ -237,6 +237,20 @@ if (!existingTagNames.has("multi-strike")) {
   );
 }
 
+if (!existingTagNames.has("invincible")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "invincible", "Invincible", "The holder takes no damage from any source. Effects (debuffs, movements, etc.) from attacks still apply normally — only the damage number is zeroed out.",
+    JSON.stringify({}), 23
+  );
+}
+
+if (!existingTagNames.has("auto-revive")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "auto-revive", "Auto-Revive", "When the holder is defeated, they are automatically revived with a percentage of their max HP. The buff is consumed on trigger.",
+    JSON.stringify({ hpPercent: { type: "number", label: "Revive HP %", default: 25 } }), 24
+  );
+}
+
 if (!existingTagNames.has("guaranteed-hit")) {
   db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
     uuid(), "guaranteed-hit", "Guaranteed Hit", "Attacks from the holder bypass miss-chance, dodge-chance, and cover redirect.",

@@ -72,6 +72,7 @@ export function calculateDamage(
   const tierMult = DAMAGE_MULTIPLIERS[tier] ?? 1.0;
   let element = skillLevel.element ?? null;
   const isHealing = category === "healing";
+  const isShielding = category === "shielding";
 
   // Imbue override: physical attacks with no element set pick up the attacker's imbue.
   if (category === "physical" && !element) {
@@ -96,6 +97,7 @@ export function calculateDamage(
       elementalModifier: 0,
       finalDamage: 0,
       isHealing: false,
+      isShielding: false,
       element,
       breakdown: ["No damage category set on this skill level."],
     };
@@ -107,26 +109,37 @@ export function calculateDamage(
 
   const isTrue = category === "true";
 
-  if (isHealing) {
-    // Healing uses SPI, no defense involved
-    offensiveStat = getEffectiveStat(attacker.stats.spi, "spi", attacker.buffs);
+  // Offensive stat override: if set, use the specified stat instead of the category default
+  const offStatKey = skillLevel.offensiveStatOverride;
+
+  if (isHealing || isShielding) {
+    const healStat = offStatKey ?? "spi";
+    offensiveStat = getEffectiveStat(attacker.stats[healStat as keyof CharacterStats] as number, healStat, attacker.buffs);
     defensiveStat = 1;
-    breakdown.push(`Healer SPI: ${attacker.stats.spi} → ${offensiveStat.toFixed(1)} (after buffs)`);
+    breakdown.push(`${isShielding ? "Shield" : "Healer"} ${healStat.toUpperCase()}: ${(attacker.stats[healStat as keyof CharacterStats])} → ${offensiveStat.toFixed(1)} (after buffs)`);
   } else if (isTrue) {
     // True damage ignores defense entirely
-    offensiveStat = 1;
-    defensiveStat = 1;
-    breakdown.push(`True damage — ignores defense`);
+    if (offStatKey) {
+      offensiveStat = getEffectiveStat(attacker.stats[offStatKey as keyof CharacterStats] as number, offStatKey, attacker.buffs);
+      defensiveStat = 1;
+      breakdown.push(`True damage (${offStatKey.toUpperCase()}-based): ${(attacker.stats[offStatKey as keyof CharacterStats])} → ${offensiveStat.toFixed(1)} (after buffs)`);
+    } else {
+      offensiveStat = 1;
+      defensiveStat = 1;
+      breakdown.push(`True damage — ignores defense`);
+    }
   } else if (category === "physical") {
-    offensiveStat = getEffectiveStat(attacker.stats.atk, "atk", attacker.buffs);
+    const atkStat = offStatKey ?? "atk";
+    offensiveStat = getEffectiveStat(attacker.stats[atkStat as keyof CharacterStats] as number, atkStat, attacker.buffs);
     defensiveStat = getEffectiveStat(defender.stats.def, "def", defender.buffs);
-    breakdown.push(`ATK: ${attacker.stats.atk} → ${offensiveStat.toFixed(1)} (after buffs)`);
+    breakdown.push(`${atkStat.toUpperCase()}: ${(attacker.stats[atkStat as keyof CharacterStats])} → ${offensiveStat.toFixed(1)} (after buffs)`);
     breakdown.push(`DEF: ${defender.stats.def} → ${defensiveStat.toFixed(1)} (after buffs)`);
   } else {
     // magical
-    offensiveStat = getEffectiveStat(attacker.stats.mAtk, "mAtk", attacker.buffs);
+    const matkStat = offStatKey ?? "mAtk";
+    offensiveStat = getEffectiveStat(attacker.stats[matkStat as keyof CharacterStats] as number, matkStat, attacker.buffs);
     defensiveStat = getEffectiveStat(defender.stats.spi, "spi", defender.buffs);
-    breakdown.push(`MATK: ${attacker.stats.mAtk} → ${offensiveStat.toFixed(1)} (after buffs)`);
+    breakdown.push(`${matkStat.toUpperCase()}: ${(attacker.stats[matkStat as keyof CharacterStats])} → ${offensiveStat.toFixed(1)} (after buffs)`);
     breakdown.push(`SPI: ${defender.stats.spi} → ${defensiveStat.toFixed(1)} (after buffs)`);
   }
 
@@ -140,7 +153,7 @@ export function calculateDamage(
   }
 
   // ATK/DEF ratio (true damage uses flat 1.0 ratio)
-  const ratio = isHealing ? offensiveStat / 50 : isTrue ? 1.0 : offensiveStat / defensiveStat;
+  const ratio = (isHealing || isShielding) ? offensiveStat / 50 : isTrue ? 1.0 : offensiveStat / defensiveStat;
   breakdown.push(`Ratio: ${ratio.toFixed(2)}`);
 
   // Base damage
@@ -369,8 +382,9 @@ export function calculateDamage(
     atkDefRatio: Math.round(ratio * 100) / 100,
     tierMultiplier: tierMult,
     elementalModifier: Math.round(elementalModifier * 100),
-    finalDamage: Math.max(isHealing ? finalDamage : 1, finalDamage), // min 1 damage for attacks
-    isHealing,
+    finalDamage: Math.max((isHealing || isShielding) ? finalDamage : 1, finalDamage), // min 1 damage for attacks
+    isHealing: isHealing || isShielding, // shielding uses the same "positive effect" path as healing for entry flow
+    isShielding,
     element,
     breakdown,
   };
