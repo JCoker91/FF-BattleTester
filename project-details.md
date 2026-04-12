@@ -408,11 +408,93 @@ Identity: healer/support with a Limit Break system mirroring Cloud's. Stacks bui
 - `damageTrigger` field — controls when damage/healing/shielding resolves ("on-use" default, "turn-start" for passives)
 - `offensiveStatOverride` — override which stat scales damage (for Holy using SPI)
 
+### Vivi (Arcanist) — IN PROGRESS
+
+Identity: glass cannon black mage. Lowest total stats but highest MATK. Weak early, devastating late if not killed. Three innate options give him distinct playstyles. Dual Cast is his signature mechanic — gated behind Concentration stacks so it's earned, not spammed.
+
+**Innate options:**
+- **Concentration (passive)** — "When you cast a black magic spell, gain 1 Concentration stack." Enables natural Double Black buildup through aggression.
+- **Red Draw** — generate 1 additional red energy at round start. Already configured (shared with Squall).
+- **Arcane Might** — while-equipped passive with `template-ignore-spirit` tag (25% SPI ignore on all black magic templates). Consistent damage every turn vs burst.
+- **Stacking MATK buff (name TBD)** — turn-start, undispellable, +5% MATK per stack, NO cap. Late-game scaling threat. Counterplay: kill him early (he's fragile).
+
+**Basic:**
+- **Focus** — 0 cost, NOT instant (costs turn). Grants 1 Concentration stack + energyGenerate 2 red with `next-round` trigger. Setup turn for Double Black.
+
+**Abilities:**
+- **Black Magic (Expert)** — template skill. L1 = BM L1-L5 templates, L2 adds BM L6, L3 adds BM L7.
+- **Double Black** — conditional, `requiresMinStacks: { Concentration, 2 }`, `consumesCasterStacks: { Concentration, 2 }`. Uses `dualCast: { templateIds: [all BM templates available at current level] }`. Player picks 2 template spells + targets separately, both fire in succession. Costs turn.
+
+**Concentration system:**
+- Concentration status: stackable, max 2, no stat effect, undispellable, permanent until consumed
+- Sources: Focus (basic, 1 stack) OR casting black magic with Concentration innate equipped (1 stack)
+- Constraint: max 1 stack per turn (Focus is non-instant so can't stack with casting)
+- Double Black requires 2 stacks, consumes them on use
+
+**Black Magic spell table:**
+
+| Spell | Level | Cost | Damage | Effect |
+|---|---|---|---|---|
+| Fire | L1 | 1 RED | Moderate magical, fire | — |
+| Blizzard | L1 | 1 RED | Moderate magical, ice | — |
+| Thunder | L1 | 1 RED | Moderate magical, thunder | — |
+| Aero | L1 | 1 RED | Moderate magical, wind | — |
+| Stone | L1 | 1 RED | Moderate magical, earth | — |
+| Sleep | L2 | 1 PURPLE | None | 50% chance, skip-turn, removed-on-damage, 2 turns |
+| Slow | L2 | 1 PURPLE | None | SPD -30%, 3 turns |
+| Blind | L2 | 1 PURPLE | None | 100% chance, miss-chance 50%, 2 turns |
+| Bio | L3 | 1 RED + 1 PURPLE | Low magical | DoT, 3 turns |
+| Osmose | L3 | 1 PURPLE | None | Energy steal 2 random |
+| Drain | L3 | 2 RED | Moderate magical, non-elemental | Drain 100% |
+| Fira | L4 | 2 RED | High magical, fire | — |
+| Blizzara | L4 | 2 RED | High magical, ice | — |
+| Thundara | L4 | 2 RED | High magical, thunder | — |
+| Aerora | L4 | 2 RED | High magical, wind | — |
+| Stonra | L4 | 2 RED | High magical, earth | — |
+| Comet | L5 | 2 RED | High magical, non-elemental | — |
+| Stop | L5 | 2 PURPLE | None | 50% chance, skip-turn, NOT removed-on-damage, 1 turn |
+| Silence | L5 | 2 PURPLE | None | 50% chance, restrict-skills, 2 turns |
+| Warp | L5 | 2 YELLOW | None | Teleport-target (move enemy to empty space) |
+| Firaga | L6 | 3 RED | Moderate magical, fire | AOE all enemies |
+| Blizzaga | L6 | 3 RED | Moderate magical, ice | AOE all enemies |
+| Thundaga | L6 | 3 RED | Moderate magical, thunder | AOE all enemies |
+| Aeroga | L6 | 3 RED | Moderate magical, wind | AOE all enemies |
+| Stonga | L6 | 3 RED | Moderate magical, earth | AOE all enemies |
+| Flare | L7 | 4 RED | Severe magical, non-elemental | ignoreSpirit 30% |
+| Meteor | L7 | 4 RED | High magical, non-elemental | AOE all enemies |
+
+**Template level distribution:**
+- Initiate: L1 + L2 + L3
+- Adept: L3 + L4 + L5
+- Expert: L5 + L6 + L7
+- (Higher levels always include all spells from lower levels within their tier)
+
+**Statuses needed for Vivi:**
+- Concentration (stackable, max 2, no stat, undispellable, permanent)
+- Arcane Might buff (while-equipped, `template-ignore-spirit` tag, 25%)
+- Stacking MATK buff (turn-start, undispellable, +5% MATK per stack, no cap, permanent)
+- Sleep (skip-turn tag, removed-on-damage tag, dispellable)
+- Blind (miss-chance tag 50%, dispellable)
+- Stop (skip-turn tag, NOT removed-on-damage, dispellable)
+- Silence (restrict-skills tag, dispellable)
+- Bio DoT (dot tag, dispellable)
+
+**New systems built for Vivi:**
+- `dualCast` field on SkillLevel (multi-template support)
+- `drain` field on SkillLevel (lifesteal % of damage dealt)
+- `teleport-target` movement type (warp enemy to empty cell)
+- `next-round` energy generation trigger (deferred to next round start)
+- `template-ignore-spirit` effect tag (passive SPI pierce for template spells)
+- `healing-dealt` effect tag (for Aerith's Grace, but available system-wide)
+- Weighted random tier pool UI (for Aerith's Pray, but available system-wide)
+
+User is configuring these manually in the UI.
+
 ### Roadmap
 
 1. ~~Squall~~ — done
-2. **Aerith** — in progress (see above)
-3. **Vivi** (Arcanist) — Black Magic template, **Double Cast** mechanic (consume turn once, resolve two skill picks). NEW system.
+2. **Aerith** — in progress (abilities configured, limit conditionals designed)
+3. **Vivi** — in progress (systems built, configuring black magic spells)
 4. **Terra** (Arcanist) — Trance reuses Zidane's pattern, Black Magic reuses Vivi's template
 5. **Yuna** (Specialist) — Bar/En spells (uses existing eleRes/eleDmg buffs), summons (UNKNOWN system, biggest unknown)
 

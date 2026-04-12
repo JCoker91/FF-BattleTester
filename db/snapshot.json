@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-04-10T21:55:13.194Z",
+  "exportedAt": "2026-04-12T01:34:36.233Z",
   "tables": {
     "characters": [
       {
@@ -171,7 +171,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":\"8e6632d5-dda7-4983-871c-eca4a0d7e1fa\",\"basicId\":\"b0ad67b1-f274-4b29-b484-92c4d9af0334\",\"abilityIds\":[\"e18aa722-e925-4ab4-b06f-e4a9d98d1085\"]}",
+        "equipped_loadouts": "{\"innateId\":\"8e6632d5-dda7-4983-871c-eca4a0d7e1fa\",\"basicId\":\"b0ad67b1-f274-4b29-b484-92c4d9af0334\",\"abilityIds\":[\"e18aa722-e925-4ab4-b06f-e4a9d98d1085\",\"85a61b24-6942-4daf-924a-ff2df545b364\",\"593dd5c2-6233-4ead-85a5-b14b464289dc\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -219,9 +219,9 @@
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
-        "gender": null,
+        "gender": "male",
         "hp_scaled_v1": 1,
-        "show_in_bench": 0
+        "show_in_bench": 1
       },
       {
         "id": "02aa2321-2c60-4efa-aa11-7b3895c8e45e",
@@ -800,21 +800,6 @@
       {
         "id": "ccb285ee-db00-4971-920e-d6f9cdec0990",
         "character_id": "a1c80138-c5ae-4daf-929e-d9f817d5f012",
-        "name": "Base",
-        "sort_order": 0,
-        "photo_url": null,
-        "type_override": null,
-        "energy_override": null,
-        "summary": null,
-        "stat_overrides": null,
-        "elemental_res_override": null,
-        "elemental_dmg_override": null,
-        "status_resistance_override": null,
-        "startable": 1
-      },
-      {
-        "id": "ba0ea8b3-a19b-4455-a587-25c71cea4919",
-        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
         "name": "Base",
         "sort_order": 0,
         "photo_url": null,
@@ -2166,7 +2151,7 @@
       },
       {
         "id": "b0ad67b1-f274-4b29-b484-92c4d9af0334",
-        "name": "Healing Touch",
+        "name": "Mend",
         "levels": "[{\"description\":\"Heals an ally a **low** amount.\",\"cost\":[],\"damageCategory\":\"healing\",\"damageTier\":\"low\",\"targetType\":\"target-ally-or-self\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
         "character_id": "",
         "skill_type": "basic",
@@ -2191,13 +2176,109 @@
       {
         "id": "85a61b24-6942-4daf-924a-ff2df545b364",
         "name": "Pray",
-        "levels": "[{\"description\":\"Heals the party a random amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":2}],\"damageCategory\":\"healing\",\"damageTier\":\"random\",\"randomTierPool\":[\"minor\",\"low\",\"moderate\"],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "levels": "[{\"description\":\"Heals the party a random amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"healing\",\"damageTier\":\"random\",\"randomTierPool\":[\"low\",\"minor\",\"minor\",\"minor\",\"minor\",\"low\"],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"]},{\"description\":\"Heals the party a random amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"healing\",\"damageTier\":\"random\",\"randomTierPool\":[\"low\",\"low\",\"minor\",\"minor\",\"minor\",\"low\"],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"variableRepeat\":{\"color\":\"red\",\"max\":5}},{\"description\":\"Heals the party a random amount of HP.\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"healing\",\"damageTier\":\"random\",\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"randomTierPool\":[\"minor\",\"low\",\"low\",\"moderate\",\"low\",\"minor\"]}]",
         "character_id": "",
         "skill_type": "ability",
         "form_id": null,
         "variant_group_id": null,
         "leveled": 1,
         "description": "Heals the party a random amount.",
+        "template_id": null
+      },
+      {
+        "id": "593dd5c2-6233-4ead-85a5-b14b464289dc",
+        "name": "Grace of Centra",
+        "levels": "[{\"description\":\"Grants [[healing-enhanced-status]] this turn and gains **1** stack of [[limit-buff]].\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"rangeTags\":[\"magic\"],\"targetType\":\"self\",\"instant\":true,\"effects\":[{\"effectId\":\"80848e1f-b6ce-40b8-9b16-09d0409df81e\",\"targetType\":\"self\",\"modifier\":20,\"duration\":1},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":3}]},{\"description\":\"Grants [[healing-enhanced-status]] for **2** turns and gains **1** stack of [[limit-buff]].\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"instant\":true,\"targetType\":\"self\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"80848e1f-b6ce-40b8-9b16-09d0409df81e\",\"targetType\":\"self\",\"modifier\":20,\"duration\":2},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":3}]},{\"description\":\"Grants [[healing-enhanced-status]] for **2** turns and gains **2** stack of [[limit-buff]].\",\"cost\":[{\"color\":\"green\",\"amount\":1}],\"instant\":true,\"targetType\":\"self\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"80848e1f-b6ce-40b8-9b16-09d0409df81e\",\"targetType\":\"self\",\"modifier\":20,\"duration\":2},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":3},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"self\",\"modifier\":5,\"duration\":3}]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 1,
+        "description": "Gains limit and increases healing.",
+        "template_id": null
+      },
+      {
+        "id": "d045a0e2-91d0-4de2-b3ed-e2228676026b",
+        "name": "Fury Brand",
+        "levels": "[{\"description\":\"Grant all allies **1** stack of [[limit-buff]].\",\"cost\":[{\"color\":\"green\",\"amount\":3}],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"aoe-team\",\"modifier\":5,\"duration\":2}]},{\"description\":\"Grant all allies **2** stacks of [[limit-buff]].\",\"cost\":[{\"color\":\"green\",\"amount\":3}],\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"aoe-team\",\"modifier\":5,\"duration\":2},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"aoe-team\",\"modifier\":5,\"duration\":2}]},{\"description\":\"Grant all allies **2** stacks of [[limit-buff]] and **moderate** shield.\",\"cost\":[{\"color\":\"green\",\"amount\":3}],\"damageCategory\":\"shielding\",\"targetType\":\"aoe-team\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"aoe-team\",\"modifier\":5,\"duration\":2},{\"effectId\":\"0d6654e1-1572-4f57-bab1-bcd229e7de5f\",\"targetType\":\"aoe-team\",\"modifier\":5,\"duration\":2}]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 1,
+        "description": "Grant allies Limit stacks.",
+        "template_id": null
+      },
+      {
+        "id": "0101ff99-24dd-40a7-9cd4-d6a8f16619ff",
+        "name": "Fire",
+        "levels": "[{\"description\":\"Deals **moderate** [[fire-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":1}],\"damageCategory\":\"magical\",\"element\":\"fire\",\"targetType\":\"target-enemy\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal Fire damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "fc980b90-a447-43f5-90aa-789a94b17504",
+        "name": "Black Magic (expert)",
+        "levels": "[{\"description\":\"\",\"cost\":[],\"templateId\":\"d7402518-c56e-4fa9-bd0f-0f797344f12a\",\"dualCast\":{\"templateId\":\"d7402518-c56e-4fa9-bd0f-0f797344f12a\"}},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "",
+        "template_id": null
+      },
+      {
+        "id": "fa1dac74-dff4-4875-a460-4eb055237ec9",
+        "name": "Thunder",
+        "levels": "[{\"description\":\"Deals **moderate** [[thunder-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":1}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deals Thunder damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "1509de0e-2a42-4fef-a38e-9f11da0f9564",
+        "name": "Blizzard",
+        "levels": "[{\"description\":\"Deals **moderate** [[ice-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":1}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"element\":\"ice\",\"targetType\":\"target-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deals ice damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "125b74f8-2250-41ef-9020-476c4b507dcb",
+        "name": "Aero",
+        "levels": "[{\"description\":\"Deals **moderate** [[wind-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":1}],\"damageCategory\":\"magical\",\"element\":\"wind\",\"targetType\":\"target-enemy\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal Wind damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "2aa11437-fc32-4420-aee0-704a6854548a",
+        "name": "Stone",
+        "levels": "[{\"description\":\"Deals **moderate** [[earth-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":1}],\"damageCategory\":\"magical\",\"element\":\"earth\",\"targetType\":\"target-enemy\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deals Stone damage to an enemy.",
         "template_id": null
       }
     ],
@@ -3038,6 +3119,69 @@
         "variant_group_id": null,
         "conditions": null,
         "status_condition_id": null
+      },
+      {
+        "id": "7e91eeda-b916-45ee-99de-af93f586317b",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "593dd5c2-6233-4ead-85a5-b14b464289dc",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "544fec75-268c-41d1-970d-56183fd59700",
+        "character_id": "1db2359a-4b33-47f8-a8ab-ba50bba99880",
+        "skill_id": "d045a0e2-91d0-4de2-b3ed-e2228676026b",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "4cd5459d-a703-47a9-a067-b37aeb74f0cc",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "fa1dac74-dff4-4875-a460-4eb055237ec9",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "b2565509-368e-4c0c-ac0a-e064515e5b7a",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "0101ff99-24dd-40a7-9cd4-d6a8f16619ff",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "0d002854-6a6d-446e-b374-1b808fb307b7",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "1509de0e-2a42-4fef-a38e-9f11da0f9564",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "d7686b95-6826-4e4b-9964-c6eb19917d2a",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "125b74f8-2250-41ef-9020-476c4b507dcb",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "920fc5ae-c711-4193-9099-1d4230ef2ed4",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "2aa11437-fc32-4420-aee0-704a6854548a",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
       }
     ],
     "skill_templates": [
@@ -3075,6 +3219,11 @@
         "id": "a19a4d6f-b8df-4662-b27a-cea74310dae3",
         "name": "White Magic Lv 7",
         "description": "Grants access to Lv 7 White Magic."
+      },
+      {
+        "id": "d7402518-c56e-4fa9-bd0f-0f797344f12a",
+        "name": "Black Magic Lv 1",
+        "description": "Grants access to Lv1 Black Magic"
       }
     ],
     "template_actions": [
@@ -3413,6 +3562,12 @@
         "template_id": "a19a4d6f-b8df-4662-b27a-cea74310dae3",
         "skill_id": "0c24ef41-d083-42de-a15a-5cdc97edc110",
         "sort_order": 13
+      },
+      {
+        "id": "72ad4925-4f74-4b10-acff-3367a8190558",
+        "template_id": "d7402518-c56e-4fa9-bd0f-0f797344f12a",
+        "skill_id": "0101ff99-24dd-40a7-9cd4-d6a8f16619ff",
+        "sort_order": 0
       }
     ],
     "series": [
@@ -3766,6 +3921,72 @@
         "keyword": "magical-resistance",
         "label": "Magical",
         "description": "Determines magic damage received."
+      },
+      {
+        "id": "df84cfca-b4ac-4ff8-add6-4a6b3daf3ba8",
+        "keyword": "healing-enhanced-status",
+        "label": "Enhanced Healing",
+        "description": "Increases effectiveness of heals by 30%"
+      },
+      {
+        "id": "fc7f5430-ce71-4a17-b5cb-32817ebcc3ad",
+        "keyword": "thunder-damage",
+        "label": "Thunder",
+        "description": "Thunder damage type."
+      },
+      {
+        "id": "a4535d20-15ed-4b15-85bd-6628bd2ad043",
+        "keyword": "black-magic-lvl-1",
+        "label": "Black Magic Lv 1",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone"
+      },
+      {
+        "id": "d348814e-348d-4764-bb1f-2d9097088ec4",
+        "keyword": "black-magic-lvl-2",
+        "label": "Black Magic Lv 2",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone, Sleep, Slow, Blind"
+      },
+      {
+        "id": "ee47fee6-866d-4f8f-a6a7-beecfe926f24",
+        "keyword": "black-magic-lvl-3",
+        "label": "Black Magic Lv 3",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone, Sleep, Slow, Blind, Bio, Osmose, Drain"
+      },
+      {
+        "id": "b3146876-f1b8-4a47-b96d-9348ffdce347",
+        "keyword": "black-magic-lvl-4",
+        "label": "Black Magic Lv 4",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone, Sleep, Slow, Blind, Bio, Osmose, Drain, Fira, Blizzara, Thundara, Aerora, Stonra"
+      },
+      {
+        "id": "e440a738-87c7-4a57-8d64-f43bbdc880b4",
+        "keyword": "black-magic-lvl-5",
+        "label": "Black Magic Lv 5",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone, Sleep, Slow, Blind, Bio, Osmose, Drain, Fira, Blizzara, Thundara, Aerora, Stonra, Comet, Stop, Silence, Warp"
+      },
+      {
+        "id": "b5616c10-51cc-41f4-8d36-5094dabe8ef4",
+        "keyword": "black-magic-lvl-6",
+        "label": "Black Magic Lv 6",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone, Sleep, Slow, Blind, Bio, Osmose, Drain, Fira, Blizzara, Thundara, Aerora, Stonra, Comet, Stop, Silence, Warp, Firaga, Thundaga, Blizzaga, Aeroga, Stonga"
+      },
+      {
+        "id": "0c9ae97d-9cd3-4130-933a-8bbdf28aa378",
+        "keyword": "black-magic-lvl-7",
+        "label": "Black Magic Lv 7",
+        "description": "Fire, Thunder, Blizzard, Aero, Stone, Sleep, Slow, Blind, Bio, Osmose, Drain, Fira, Blizzara, Thundara, Aerora, Stonra, Comet, Stop, Silence, Warp, Firaga, Thundaga, Blizzaga, Aeroga, Stonga, Flare, Meteor"
+      },
+      {
+        "id": "9ca69c48-8bea-4156-8593-fc84d412e845",
+        "keyword": "wind-damage",
+        "label": "Wind",
+        "description": "Wind damage type."
+      },
+      {
+        "id": "fd75e356-c240-4a74-897b-6c01fa0dad2a",
+        "keyword": "earth-damage",
+        "label": "Earth",
+        "description": "Earth damage type."
       }
     ],
     "teams": [
@@ -3773,7 +3994,7 @@
         "id": "team-left",
         "name": "Team A",
         "side": "left",
-        "placements": "[{\"characterId\":\"1db2359a-4b33-47f8-a8ab-ba50bba99880\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4c21a0e9-a410-4e84-a9d2-a25feb2d1d50\",\"position\":{\"row\":0,\"col\":1}}]"
+        "placements": "[{\"characterId\":\"1db2359a-4b33-47f8-a8ab-ba50bba99880\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":2,\"col\":2}}]"
       },
       {
         "id": "team-right",
@@ -4717,6 +4938,23 @@
         "form_id": null,
         "dispellable": 1,
         "polarity": "positive"
+      },
+      {
+        "id": "80848e1f-b6ce-40b8-9b16-09d0409df81e",
+        "name": "Healing Enhanced",
+        "category": "status",
+        "stat": "none",
+        "default_modifier": null,
+        "stackable": 0,
+        "max_stacks": null,
+        "on_max_stacks": null,
+        "resistable": 0,
+        "stats": "[\"none\"]",
+        "behavior": null,
+        "tags": "[{\"type\":\"healing-dealt\",\"params\":{\"percent\":30}}]",
+        "form_id": null,
+        "dispellable": 1,
+        "polarity": "positive"
       }
     ],
     "effect_tag_types": [
@@ -4910,6 +5148,22 @@
         "label": "Auto-Revive",
         "description": "When the holder is defeated, they are automatically revived with a percentage of their max HP. The buff is consumed on trigger.",
         "param_schema": "{\"hpPercent\":{\"type\":\"number\",\"label\":\"Revive HP %\",\"default\":25}}",
+        "sort_order": 24
+      },
+      {
+        "id": "9a610680-4fb2-4e78-8d2f-f2c24f593f2f",
+        "name": "healing-dealt",
+        "label": "Healing Dealt",
+        "description": "Modifies outgoing healing from the holder. Positive values amplify heals cast by this character.",
+        "param_schema": "{\"percent\":{\"type\":\"number\",\"label\":\"Modifier %\",\"default\":50}}",
+        "sort_order": 23
+      },
+      {
+        "id": "7c75e1eb-8e32-4c6f-987c-9cf2f15b2228",
+        "name": "template-ignore-spirit",
+        "label": "Template Ignore Spirit",
+        "description": "Attacks from the specified templates ignore a percentage of the target's SPI. Applied via while-equipped passive.",
+        "param_schema": "{\"percent\":{\"type\":\"number\",\"label\":\"Ignore SPI %\",\"default\":25},\"templateIds\":{\"type\":\"string[]\",\"label\":\"Template IDs (comma-separated)\"}}",
         "sort_order": 24
       }
     ]

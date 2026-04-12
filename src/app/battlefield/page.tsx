@@ -13,7 +13,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { useStore } from "@/lib/store";
-import { Character, CharacterType, CHARACTER_TYPES, CharacterSkill, Skill, SkillLevel, SkillEffect, SkillTemplate, TemplateAction, Team, PlacedCharacter, EnergyColor, ENERGY_COLORS, EnergyGeneration, SKILL_TYPE_LABELS, ELEMENTS, ELEMENT_ICONS, ELEMENT_LABELS, TARGET_TYPE_LABELS, TargetType, Form, BuffDebuff, BattleState, DamageResult, StatusEffect, ResistanceGrant, Element, resolveFormView, toggleEquipLoadout } from "@/lib/types";
+import { Character, CharacterType, CHARACTER_TYPES, CharacterSkill, Skill, SkillLevel, SkillEffect, SkillTemplate, TemplateAction, Team, PlacedCharacter, EnergyColor, ENERGY_COLORS, EnergyCost, EnergyGeneration, SKILL_TYPE_LABELS, ELEMENTS, ELEMENT_ICONS, ELEMENT_LABELS, TARGET_TYPE_LABELS, TargetType, Form, BuffDebuff, BattleState, DamageResult, StatusEffect, ResistanceGrant, Element, resolveFormView, toggleEquipLoadout } from "@/lib/types";
 import { DAMAGE_TIER_LABELS, DAMAGE_CATEGORY_LABELS, DamageTier } from "@/lib/damage-config";
 import { calculateDamage } from "@/lib/damage-calc";
 import { resolveTargets, TargetResolution } from "@/lib/targeting";
@@ -708,6 +708,235 @@ function TurnOrderBar({
   );
 }
 
+/** Sub-component for picking a single spell + target in the dual cast flow */
+function DualCastSpellPicker({
+  resolvedActions,
+  activeCharId,
+  teams,
+  getCharacter,
+  currentHpMap,
+  buffsMap,
+  battleFormMap,
+  getFormsForCharacter,
+  characterLevelMap,
+  applyCharLevelStats: applyLvl,
+  stolenEnergyByChar,
+  getCharCol,
+  bonusIgnoreSpirit,
+  sideEnergy,
+  otherSpellCost,
+  statusEffects,
+  skillLevelMap,
+  getPassiveResistanceGrants: getPassiveRes,
+  skills,
+  characterSkills,
+  onConfirm,
+}: {
+  resolvedActions: { action: { id: string }; skill: Skill }[];
+  activeCharId: string;
+  teams: Team[];
+  getCharacter: (id: string) => Character | undefined;
+  currentHpMap: Record<string, number>;
+  buffsMap: Record<string, BuffDebuff[]>;
+  battleFormMap: Record<string, string>;
+  getFormsForCharacter: (charId: string) => Form[];
+  characterLevelMap: Record<string, number>;
+  applyCharLevelStats: <T extends { atk: number; mAtk: number; def: number; spi: number; spd: number }>(stats: T, level: number) => T;
+  stolenEnergyByChar: Record<string, number>;
+  getCharCol: (charId: string) => number | undefined;
+  bonusIgnoreSpirit: number;
+  sideEnergy: Record<string, number>;
+  otherSpellCost: EnergyCost[];
+  statusEffects: StatusEffect[];
+  skillLevelMap: Record<string, number>;
+  getPassiveResistanceGrants: (char: Character, formId: string | null, skills: Skill[], assignments: CharacterSkill[], skillLevelMap: Record<string, number>) => ResistanceGrant[];
+  skills: Skill[];
+  characterSkills: CharacterSkill[];
+  onConfirm: (skill: Skill, targetId: string) => void;
+}) {
+  const [pickedSkillId, setPickedSkillId] = useState<string | null>(null);
+  const [pickedTargetId, setPickedTargetId] = useState<string>("");
+
+  const pickedAction = pickedSkillId ? resolvedActions.find((r) => r.skill.id === pickedSkillId) : null;
+  const pickedSkill = pickedAction?.skill ?? null;
+  const pickedLevel = pickedSkill?.levels[0];
+
+  const attackerSideLocal = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
+
+  // Resolve valid targets for the picked spell
+  const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy", "all-front-row-enemy", "all-middle-row-enemy", "all-back-row-enemy", "front-two-rows-enemy", "back-two-rows-enemy", "same-line-enemy"]);
+  const isAoe = pickedLevel?.targetType ? aoeTypes.has(pickedLevel.targetType) : false;
+
+  const allPlaced = teams.flatMap((t) => t.placements.map((p) => ({ charId: p.characterId, side: t.side })));
+  const isEnemyTarget = pickedLevel?.targetType && ["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"].includes(pickedLevel.targetType);
+  const isAllyTarget = pickedLevel?.targetType && ["target-ally", "target-ally-or-self", "adjacent-ally", "random-ally"].includes(pickedLevel.targetType);
+  const isSelfTarget = pickedLevel?.targetType === "self" || pickedLevel?.targetType === "target-ally-or-self";
+  const isTeamAoe = pickedLevel?.targetType === "aoe-team";
+  const isFallenAlly = pickedLevel?.targetType === "fallen-ally";
+
+  let validTargets = allPlaced.filter((p) => {
+    const hp = currentHpMap[p.charId] ?? (getCharacter(p.charId)?.stats.hp ?? 1);
+    if (isFallenAlly) return p.side === attackerSideLocal && p.charId !== activeCharId && hp <= 0;
+    if (hp <= 0) return false;
+    if (isTeamAoe) return p.side === attackerSideLocal;
+    if (isAllyTarget) return p.side === attackerSideLocal && (isSelfTarget || p.charId !== activeCharId);
+    if (isSelfTarget && pickedLevel?.targetType === "self") return p.charId === activeCharId;
+    if (isEnemyTarget) return p.side !== attackerSideLocal;
+    return p.charId !== activeCharId;
+  });
+
+  // Front-row-enemy filtering
+  if (pickedLevel?.targetType === "front-row-enemy") {
+    const enemyPlacements = teams.filter((t) => t.side !== attackerSideLocal).flatMap((t) => t.placements);
+    const frontByRow = new Map<number, string>();
+    for (const p of enemyPlacements) {
+      const existing = frontByRow.get(p.position.row);
+      if (existing === undefined) {
+        frontByRow.set(p.position.row, p.characterId);
+      } else {
+        const existingP = enemyPlacements.find((ep) => ep.characterId === existing);
+        if (existingP && p.position.col < existingP.position.col) {
+          frontByRow.set(p.position.row, p.characterId);
+        }
+      }
+    }
+    validTargets = validTargets.filter((t) => frontByRow.has(0) ? new Set(frontByRow.values()).has(t.charId) : true);
+  }
+
+  // Self target inclusion
+  if (isSelfTarget && !validTargets.some((t) => t.charId === activeCharId)) {
+    validTargets.unshift({ charId: activeCharId, side: attackerSideLocal ?? "left" });
+  }
+
+  const previewTarget = pickedTargetId || validTargets[0]?.charId || "";
+
+  // Check if this specific spell is affordable (accounting for the other spell's cost)
+  const canAffordSpell = (spellSkill: Skill): boolean => {
+    const cost = spellSkill.levels[0]?.cost ?? [];
+    const needed: Record<string, number> = {};
+    // Sum both this spell and the other spell's cost
+    for (const c of [...cost, ...otherSpellCost]) {
+      needed[c.color] = (needed[c.color] ?? 0) + c.amount;
+    }
+    let rainbowNeeded = 0;
+    for (const [color, amt] of Object.entries(needed)) {
+      const have = sideEnergy[color] ?? 0;
+      if (have < amt) rainbowNeeded += amt - have;
+    }
+    return rainbowNeeded <= (sideEnergy["rainbow"] ?? 0);
+  };
+
+  // Damage preview
+  const computePreview = (tid: string): DamageResult | null => {
+    if (!pickedSkill?.levels[0]?.damageCategory) return null;
+    const attacker = getCharacter(activeCharId);
+    const target = getCharacter(tid);
+    if (!attacker || !target) return null;
+    const aFormId = battleFormMap[activeCharId] ?? null;
+    const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
+    const aStats = applyLvl(aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats, characterLevelMap[attacker.id] ?? 0);
+    const aElemDmg = aForm?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm.elementalDmgOverride } : attacker.elementalDamage;
+    const dFormId = battleFormMap[tid] ?? null;
+    const dForm = dFormId ? getFormsForCharacter(tid).find((f) => f.id === dFormId) : null;
+    const dStats = applyLvl(dForm?.statOverrides ? { ...target.stats, ...dForm.statOverrides } : target.stats, characterLevelMap[target.id] ?? 0);
+    const dElemResBase = dForm?.elementalResOverride ? { ...target.elementalResistance, ...dForm.elementalResOverride } : target.elementalResistance;
+    const dPassiveGrants = getPassiveRes(target, dFormId, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
+    const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
+    return calculateDamage(
+      { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId), bonusIgnoreSpirit },
+      { stats: dStats, elementalResistance: dElemRes as typeof target.elementalResistance, elementalDamage: target.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? target.stats.hp, col: getCharCol(tid) },
+      pickedSkill.levels[0]
+    );
+  };
+
+  const preview = !isAoe && previewTarget ? computePreview(previewTarget) : null;
+  const needsTarget = pickedLevel?.targetType && pickedLevel.targetType !== "no-target" && pickedLevel.targetType !== "self" && !isAoe;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-1.5 flex-wrap">
+        {resolvedActions.map(({ skill }) => {
+          const spellCost = skill.levels[0].cost;
+          const affordable = canAffordSpell(skill);
+          return (
+            <button
+              key={skill.id}
+              onClick={() => { setPickedSkillId(pickedSkillId === skill.id ? null : skill.id); setPickedTargetId(""); }}
+              className={`border rounded px-2 py-1 text-left transition-colors ${
+                pickedSkillId === skill.id ? "bg-gray-800 border-purple-500 ring-1 ring-purple-500/30"
+                : affordable ? "bg-gray-800 border-gray-700 hover:bg-gray-700"
+                : "bg-gray-900/50 border-gray-800 opacity-40"
+              }`}
+            >
+              <div className={`text-[11px] font-medium ${affordable ? "text-white" : "text-gray-500"}`}>{skill.name}</div>
+              <div className="flex items-center gap-1 mt-0.5">
+                {spellCost.length > 0 && <EnergyCostDisplay cost={spellCost} />}
+                {skill.levels[0].damageCategory && (
+                  <span className="text-[8px] text-gray-500">
+                    {DAMAGE_TIER_LABELS[(skill.levels[0].damageTier ?? "moderate") as DamageTier]} {DAMAGE_CATEGORY_LABELS[skill.levels[0].damageCategory]}
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {pickedSkill && (
+        <div className="bg-gray-900/50 rounded p-2 space-y-2">
+          <div className="text-xs text-white font-medium">{pickedSkill.name}</div>
+          {pickedSkill.description && <p className="text-[10px] text-gray-400">{pickedSkill.description}</p>}
+
+          {/* Target picker */}
+          {needsTarget && (
+            <select
+              className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none"
+              value={previewTarget}
+              onChange={(e) => setPickedTargetId(e.target.value)}
+            >
+              {validTargets.length === 0 && <option value="">No valid targets</option>}
+              {validTargets.map((t) => {
+                const c = getCharacter(t.charId);
+                return <option key={t.charId} value={t.charId}>{c?.name ?? "Unknown"} {t.charId === activeCharId ? "(self)" : `(${t.side === attackerSideLocal ? "ally" : "enemy"})`}</option>;
+              })}
+            </select>
+          )}
+
+          {isAoe && (
+            <div className="text-[10px] text-gray-400">
+              Targets: {validTargets.map((t) => getCharacter(t.charId)?.name ?? "Unknown").join(", ")}
+            </div>
+          )}
+
+          {/* Damage preview */}
+          {!isAoe && preview && (
+            <div>
+              <span className={`text-lg font-bold ${preview.isHealing ? "text-green-400" : "text-red-400"}`}>
+                {preview.isHealing ? "+" : "-"}{preview.finalDamage}
+              </span>
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              if (!pickedSkill) return;
+              const targetId = isAoe ? (validTargets[0]?.charId ?? "") : (previewTarget || validTargets[0]?.charId || "");
+              if (!targetId && pickedLevel?.targetType !== "no-target") return;
+              onConfirm(pickedSkill, targetId);
+              setPickedSkillId(null);
+              setPickedTargetId("");
+            }}
+            disabled={!canAffordSpell(pickedSkill) || (!isAoe && needsTarget && !previewTarget)}
+            className={`w-full text-[10px] px-2 py-1 rounded text-white font-medium ${!canAffordSpell(pickedSkill) ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-500"}`}
+          >
+            {!canAffordSpell(pickedSkill) ? "Not Enough Energy" : "Select This Spell"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BattlefieldPage() {
   const { characters, skills, characterSkills, teams, forms, templates, templateActions, statusEffects, updateTeam, updateCharacter, getCharacter, getSkill, getFormsForCharacter } = useStore();
   const [activeChar, setActiveChar] = useState<Character | null>(null);
@@ -818,6 +1047,15 @@ export default function BattlefieldPage() {
   const [expandedTemplateSkillId, setExpandedTemplateSkillId] = useState<string | null>(null);
   const [selectedTemplateActionId, setSelectedTemplateActionId] = useState<string | null>(null);
   const [templatePreviewTargetId, setTemplatePreviewTargetId] = useState<string>("");
+  // Pending energy that will be added at the start of next round (from "next-round" trigger skills)
+  const [pendingNextRoundEnergy, setPendingNextRoundEnergy] = useState<Record<string, Record<string, number>>>({});
+  // Dual Cast state: when a dual-cast skill is activated, this holds the two spell picks
+  const [dualCastState, setDualCastState] = useState<{
+    parentSkillId: string; // the dual-cast ability (e.g. "Double Black")
+    templateIds: string[];
+    spells: { skill: Skill; targetId: string }[];
+    step: number; // 0 = picking spell 1, 1 = picking spell 2, 2 = ready to fire
+  } | null>(null);
   const [teamEnergy, setTeamEnergy] = useState<Record<string, Record<string, number>>>({});
   type LogKind =
     | "round"
@@ -1390,6 +1628,8 @@ export default function BattlefieldPage() {
       }
     }
     setTeamEnergy(initialEnergy);
+    setPendingNextRoundEnergy({});
+    setDualCastState(null);
     setBattleLog([]);
     setFiredOnceEffects(new Set());
     setDefeatedCharIds(new Set());
@@ -1764,8 +2004,20 @@ export default function BattlefieldPage() {
             }
           }
         }
+        // Add pending next-round energy (from "next-round" trigger skills used last round)
+        for (const [side, pending] of Object.entries(pendingNextRoundEnergy)) {
+          for (const [color, amount] of Object.entries(pending)) {
+            if (amount > 0) {
+              fresh[side][color] = (fresh[side][color] ?? 0) + amount;
+            }
+          }
+        }
         return fresh;
       });
+      // Clear pending energy after it's been applied
+      if (Object.keys(pendingNextRoundEnergy).length > 0) {
+        setPendingNextRoundEnergy({});
+      }
       // Process start of turn for first character
       const firstCharId = order[0]?.characterId;
       if (firstCharId) {
@@ -2601,6 +2853,7 @@ export default function BattlefieldPage() {
                         : `bg-gray-800 hover:bg-gray-700 ${isLeveled ? levelBorder : "border-gray-700"}`;
                       const nameColor = isConditional ? "text-amber-200" : "text-white";
                       const hasTemplate = !!(skill.levels[levelIdx]?.templateId);
+                      const hasDualCast = !!(skill.levels[levelIdx]?.dualCast);
                       const isExpanded = expandedTemplateSkillId === skill.id;
 
                       const isUnaffordable = type !== "innate" && !canAffordSkill(skill.id);
@@ -2620,7 +2873,17 @@ export default function BattlefieldPage() {
                           <button
                             onClick={() => {
                               if (isDisabledByStatus) return;
-                              if (hasTemplate) {
+                              if (hasDualCast) {
+                                const dcRaw = skill.levels[levelIdx]!.dualCast! as { templateIds?: string[]; templateId?: string };
+                                setDualCastState({
+                                  parentSkillId: skill.id,
+                                  templateIds: dcRaw.templateIds ?? (dcRaw.templateId ? [dcRaw.templateId] : []),
+                                  spells: [],
+                                  step: 0,
+                                });
+                                setExpandedTemplateSkillId(null);
+                                setSelectedSkill(null);
+                              } else if (hasTemplate) {
                                 setExpandedTemplateSkillId(isExpanded ? null : skill.id);
                               } else {
                                 setSelectedSkill(skill);
@@ -2756,6 +3019,23 @@ export default function BattlefieldPage() {
                     const selectedAction = selectedTemplateActionId ? resolvedActions.find((r) => r.action.id === selectedTemplateActionId) : null;
                     const selSkill = selectedAction?.skill;
 
+                    // Compute bonusIgnoreSpirit from template-ignore-spirit tag on attacker buffs
+                    const tmplBonusIgnoreSpirit = (() => {
+                      let bonus = 0;
+                      for (const b of (buffsMap[activeCharId] ?? [])) {
+                        if (!b.tags) continue;
+                        for (const t of b.tags) {
+                          if (t.type !== "template-ignore-spirit") continue;
+                          const tIds = t.params.templateIds as string[] | string | undefined;
+                          const templateIdList = Array.isArray(tIds) ? tIds : typeof tIds === "string" ? tIds.split(",").map((s: string) => s.trim()) : [];
+                          if (templateIdList.length === 0 || templateIdList.includes(tid)) {
+                            bonus += ((t.params.percent as number) ?? 0) * (b.stacks ?? 1);
+                          }
+                        }
+                      }
+                      return bonus;
+                    })();
+
                     // Determine valid targets based on targetType
                     const targetType = selSkill?.levels[0]?.targetType;
                     const attackerSideLocal = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
@@ -2827,7 +3107,7 @@ export default function BattlefieldPage() {
                       const dPassiveGrants2 = getPassiveResistanceGrants(targetChar, dFormId2, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
                       const dElemRes2 = applyPassiveElementalGrants(dElemRes2Base, dPassiveGrants2);
                       return calculateDamage(
-                        { stats: aStats2, elementalResistance: aChar2.elementalResistance, elementalDamage: aElemDmg2, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? aChar2.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) },
+                        { stats: aStats2, elementalResistance: aChar2.elementalResistance, elementalDamage: aElemDmg2, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? aChar2.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId), bonusIgnoreSpirit: tmplBonusIgnoreSpirit },
                         { stats: dStats2, elementalResistance: dElemRes2 as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMap[tid] ?? targetChar.stats.hp, col: getCharCol(tid) },
                         selSkill.levels[0]
                       );
@@ -3116,7 +3396,7 @@ export default function BattlefieldPage() {
                                     const aForm3 = aFormId3 ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId3) : null;
                                     const aStats3 = applyCharLevelStats(aForm3?.statOverrides ? { ...attacker.stats, ...aForm3.statOverrides } : attacker.stats, characterLevelMap[attacker.id] ?? 0);
                                     const aElemDmg3 = aForm3?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm3.elementalDmgOverride } : attacker.elementalDamage;
-                                    const attackerCombat3 = { stats: aStats3, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg3, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId) };
+                                    const attackerCombat3 = { stats: aStats3, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg3, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMap[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId), bonusIgnoreSpirit: tmplBonusIgnoreSpirit };
                                     // Apply to each target with fresh calculation
                                     const resultPerTarget: { tid: string; amount: number; isHealing: boolean; newHp: number }[] = [];
                                     for (const tid of targetIds) {
@@ -3188,6 +3468,342 @@ export default function BattlefieldPage() {
               );
             })()}
           </div>
+
+          {/* Dual Cast picker */}
+          {dualCastState && activeCharId && (() => {
+            const dcTemplateIds = dualCastState.templateIds;
+            const dcTmpls = dcTemplateIds.map((tid) => templates.find((t) => t.id === tid)).filter(Boolean);
+            const dcActions = templateActions.filter((a) => dcTemplateIds.includes(a.templateId)).sort((a, b) => a.sortOrder - b.sortOrder);
+            const dcResolved = dcActions.map((a) => ({ action: a, skill: skills.find((s) => s.id === a.skillId) })).filter((r) => r.skill);
+            if (dcTmpls.length === 0 || dcResolved.length === 0) return null;
+            const dcTmplNames = dcTmpls.map((t) => t!.name).join(" + ");
+            const attackerSideLocal = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
+            const currentStep = dualCastState.step;
+            const isPickingSpell = currentStep < 2;
+            const isReady = currentStep === 2;
+
+            // Compute total energy cost of both selected spells to check affordability
+            const spell1Cost = dualCastState.spells[0]?.skill.levels[0]?.cost ?? [];
+            const spell2Cost = dualCastState.spells[1]?.skill.levels[0]?.cost ?? [];
+            const combinedCostMap: Record<string, number> = {};
+            for (const c of [...spell1Cost, ...spell2Cost]) {
+              combinedCostMap[c.color] = (combinedCostMap[c.color] ?? 0) + c.amount;
+            }
+            const sideEnergy = teamEnergy[attackerSideLocal ?? ""] ?? {};
+            let rainbowNeeded = 0;
+            for (const [color, needed] of Object.entries(combinedCostMap)) {
+              const have = sideEnergy[color] ?? 0;
+              if (have < needed) rainbowNeeded += needed - have;
+            }
+            const canAffordBoth = rainbowNeeded <= (sideEnergy["rainbow"] ?? 0);
+
+            // Compute bonusIgnoreSpirit from template-ignore-spirit tag on attacker buffs
+            const dcBonusIgnoreSpirit = (() => {
+              let bonus = 0;
+              for (const b of (buffsMap[activeCharId] ?? [])) {
+                if (!b.tags) continue;
+                for (const t of b.tags) {
+                  if (t.type !== "template-ignore-spirit") continue;
+                  const tIds = t.params.templateIds as string[] | string | undefined;
+                  const templateIdList = Array.isArray(tIds) ? tIds : typeof tIds === "string" ? tIds.split(",").map((s: string) => s.trim()) : [];
+                  if (templateIdList.length === 0 || dcTemplateIds.some((id) => templateIdList.includes(id))) {
+                    bonus += ((t.params.percent as number) ?? 0) * (b.stacks ?? 1);
+                  }
+                }
+              }
+              return bonus;
+            })();
+
+            return (
+              <div className="bg-gray-800/50 border border-gray-700 rounded p-2 space-y-2 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-purple-400 font-medium">Dual Cast — {dcTmplNames} (Spell {Math.min(currentStep + 1, 2)} of 2)</span>
+                  <button onClick={() => setDualCastState(null)} className="text-[10px] text-gray-500 hover:text-gray-300">x</button>
+                </div>
+
+                {/* Show already-picked spells */}
+                {dualCastState.spells.map((s, idx) => (
+                  <div key={idx} className="flex items-center gap-2 bg-gray-900/50 rounded px-2 py-1">
+                    <span className="text-[10px] text-gray-500">Spell {idx + 1}:</span>
+                    <span className="text-[11px] text-white font-medium">{s.skill.name}</span>
+                    <span className="text-[10px] text-gray-400">→ {getCharacter(s.targetId)?.name ?? "Unknown"}</span>
+                    {idx === dualCastState.spells.length - 1 && currentStep < 2 && (
+                      <button onClick={() => setDualCastState((prev) => prev ? { ...prev, spells: prev.spells.slice(0, -1), step: prev.step - 1 } : null)} className="text-[10px] text-red-400 hover:text-red-300 ml-auto">Undo</button>
+                    )}
+                  </div>
+                ))}
+
+                {/* Spell picker for current step */}
+                {isPickingSpell && (() => {
+                  const [dcPickedSkillId, dcPickedTargetId] = [null, null] as [string | null, string | null];
+                  return (
+                    <DualCastSpellPicker
+                      resolvedActions={dcResolved as { action: { id: string }; skill: Skill }[]}
+                      activeCharId={activeCharId}
+                      teams={teams}
+                      getCharacter={getCharacter}
+                      currentHpMap={currentHpMap}
+                      buffsMap={buffsMap}
+                      battleFormMap={battleFormMap}
+                      getFormsForCharacter={getFormsForCharacter}
+                      characterLevelMap={characterLevelMap}
+                      applyCharLevelStats={applyCharLevelStats}
+                      stolenEnergyByChar={stolenEnergyByChar}
+                      getCharCol={getCharCol}
+                      bonusIgnoreSpirit={dcBonusIgnoreSpirit}
+                      sideEnergy={sideEnergy}
+                      otherSpellCost={currentStep === 1 ? spell1Cost : []}
+                      statusEffects={statusEffects}
+                      skillLevelMap={skillLevelMap}
+                      getPassiveResistanceGrants={getPassiveResistanceGrants}
+                      skills={skills}
+                      characterSkills={characterSkills}
+                      onConfirm={(skill, targetId) => {
+                        setDualCastState((prev) => {
+                          if (!prev) return null;
+                          const newSpells = [...prev.spells, { skill, targetId }];
+                          return { ...prev, spells: newSpells, step: prev.step + 1 };
+                        });
+                      }}
+                    />
+                  );
+                })()}
+
+                {/* Fire button */}
+                {isReady && (
+                  <button
+                    onClick={() => {
+                      if (!activeCharId || !canAffordBoth) return;
+                      const parentSkill = skills.find((s) => s.id === dualCastState.parentSkillId);
+                      // Use energy for the parent dual cast skill itself (if it has a cost)
+                      if (parentSkill) useSkillEnergy(parentSkill.id);
+                      const attacker = getCharacter(activeCharId);
+                      if (!attacker) return;
+                      const aFormId = battleFormMap[activeCharId] ?? null;
+                      const aForm = aFormId ? getFormsForCharacter(activeCharId).find((f) => f.id === aFormId) : null;
+
+                      // Fire both spells sequentially
+                      for (let si = 0; si < dualCastState.spells.length; si++) {
+                        const { skill: spellSkill, targetId } = dualCastState.spells[si];
+                        const spellLevel = spellSkill.levels[0];
+                        // Use energy for each spell
+                        useSkillEnergy(spellSkill.id);
+
+                        const aStats = applyCharLevelStats(aForm?.statOverrides ? { ...attacker.stats, ...aForm.statOverrides } : attacker.stats, characterLevelMap[attacker.id] ?? 0);
+                        const aElemDmg = aForm?.elementalDmgOverride ? { ...attacker.elementalDamage, ...aForm.elementalDmgOverride } : attacker.elementalDamage;
+
+                        // Check if the spell is AOE
+                        const aoeTypes = new Set(["aoe-enemy", "aoe-team", "self-row-enemy", "all-front-row-enemy", "all-middle-row-enemy", "all-back-row-enemy", "front-two-rows-enemy", "back-two-rows-enemy", "same-line-enemy"]);
+                        const isAoe = spellLevel.targetType ? aoeTypes.has(spellLevel.targetType) : false;
+
+                        let targetIds: string[];
+                        if (isAoe) {
+                          // Resolve AOE targets
+                          const resolved = resolveTargets(spellLevel.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
+                          targetIds = resolved.targets.map((t) => t.characterId);
+                        } else {
+                          targetIds = [targetId];
+                        }
+
+                        // Calculate damage for each target
+                        const entries: { targetId: string; newHp: number; amount: number; isHealing: boolean; category?: string; element?: string | null }[] = [];
+                        for (const tid of targetIds) {
+                          const targetChar = getCharacter(tid);
+                          if (!targetChar) continue;
+                          const dFormId = battleFormMap[tid] ?? null;
+                          const dForm = dFormId ? getFormsForCharacter(tid).find((f) => f.id === dFormId) : null;
+                          const dStats = applyCharLevelStats(dForm?.statOverrides ? { ...targetChar.stats, ...dForm.statOverrides } : targetChar.stats, characterLevelMap[targetChar.id] ?? 0);
+                          const dElemResBase = dForm?.elementalResOverride ? { ...targetChar.elementalResistance, ...dForm.elementalResOverride } : targetChar.elementalResistance;
+                          const dPassiveGrants = getPassiveResistanceGrants(targetChar, dFormId, skills, characterSkills.filter((cs) => cs.characterId === tid), skillLevelMap);
+                          const dElemRes = applyPassiveElementalGrants(dElemResBase, dPassiveGrants);
+
+                          if (spellLevel.damageCategory) {
+                            const result = calculateDamage(
+                              { stats: aStats, elementalResistance: attacker.elementalResistance, elementalDamage: aElemDmg, buffs: buffsMap[activeCharId] ?? [], currentHp: currentHpMapRef.current[activeCharId] ?? attacker.stats.hp, stolenEnergyCount: stolenEnergyByChar[activeCharId] ?? 0, col: getCharCol(activeCharId), bonusIgnoreSpirit: dcBonusIgnoreSpirit },
+                              { stats: dStats, elementalResistance: dElemRes as typeof targetChar.elementalResistance, elementalDamage: targetChar.elementalDamage, buffs: buffsMap[tid] ?? [], currentHp: currentHpMapRef.current[tid] ?? targetChar.stats.hp, col: getCharCol(tid) },
+                              spellLevel
+                            );
+                            const maxHp = targetChar.stats.hp;
+                            const cur = currentHpMapRef.current[tid] ?? maxHp;
+                            const newHp = result.isHealing ? Math.min(maxHp, cur + result.finalDamage) : Math.max(0, cur - result.finalDamage);
+                            entries.push({ targetId: tid, newHp, amount: result.finalDamage, isHealing: result.isHealing, category: spellLevel.damageCategory, element: spellLevel.element ?? null });
+                          } else {
+                            entries.push({ targetId: tid, newHp: currentHpMapRef.current[tid] ?? targetChar.stats.hp, amount: 0, isHealing: false });
+                          }
+                        }
+
+                        // Apply HP + floats + log via the main onApplyAndUse path
+                        // For dual cast, we route each spell through the main handler
+                        // But wait — onApplyAndUse advances the turn. We want both spells to fire before advancing.
+                        // Instead, apply manually like the template spell path does.
+                        setCurrentHpMap((prev) => {
+                          const next = { ...prev };
+                          for (const r of entries) next[r.targetId] = r.newHp;
+                          return next;
+                        });
+                        for (const r of entries) {
+                          if (r.amount > 0) {
+                            // Delay second spell's floats slightly
+                            if (si > 0) {
+                              setTimeout(() => spawnDamageFloat(r.targetId, r.amount, r.isHealing), 300);
+                            } else {
+                              spawnDamageFloat(r.targetId, r.amount, r.isHealing);
+                            }
+                          }
+                        }
+
+                        // Process effects (buff/debuff applications) from the spell
+                        const spellEffects = spellLevel.effects ?? [];
+                        if (spellEffects.length > 0) {
+                          const enemyTT = new Set(["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"]);
+                          const allyTT = new Set(["target-ally", "target-ally-or-self", "random-ally", "adjacent-ally", "aoe-team"]);
+                          const globalTid = round * 100 + currentTurnIndex;
+                          for (const eff of spellEffects) {
+                            const se = statusEffects.find((s) => s.id === eff.effectId);
+                            if (!se) continue;
+                            const trig = eff.trigger ?? "on-use";
+                            if (trig !== "on-use" && trig !== "on-attack-hit") continue;
+                            let effTargetIds: string[];
+                            if (eff.targetType === "self") effTargetIds = [activeCharId];
+                            else if (entries.length > 0 && ((enemyTT.has(eff.targetType) && enemyTT.has(spellLevel.targetType ?? "")) || (allyTT.has(eff.targetType) && allyTT.has(spellLevel.targetType ?? "")))) {
+                              effTargetIds = entries.map((e) => e.targetId);
+                            } else {
+                              const er = resolveTargets(eff.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
+                              effTargetIds = er.targets.map((t) => t.characterId);
+                            }
+                            const buff: Omit<BuffDebuff, "id"> = {
+                              effectId: se.id,
+                              effectName: se.name,
+                              category: se.category,
+                              stats: se.stats,
+                              modifier: !se.stats.includes("none") ? eff.modifier : 0,
+                              duration: eff.duration,
+                              source: spellSkill.name,
+                              sourceCharId: activeCharId,
+                              appliedTurn: globalTid,
+                              ...(se.tags ? { tags: se.tags } : {}),
+                              ...(se.stackable ? { stackable: true, maxStacks: se.maxStacks, stacks: 1, ...(se.onMaxStacks ? { onMaxStacks: se.onMaxStacks } : {}) } : {}),
+                            };
+                            for (const tid of effTargetIds) {
+                              if (eff.chance !== undefined && eff.chance < 100) {
+                                const roll = Math.random() * 100;
+                                if (roll >= eff.chance) continue;
+                              }
+                              const tName = getCharacter(tid)?.name ?? "Unknown";
+                              const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
+                              addBattleLog(`${se.name}${modText} applied to ${tName}${eff.duration === -1 ? "" : ` for ${eff.duration} turns`}.`);
+                              setBuffsMap((prev) => {
+                                let existing = prev[tid] ?? [];
+                                if (se.formId) {
+                                  existing = existing.filter((b) => {
+                                    const bSe = statusEffects.find((s) => s.id === b.effectId);
+                                    return !bSe?.formId || bSe.id === se.id;
+                                  });
+                                }
+                                const { buffs: updated } = applyBuffStacking(existing, buff);
+                                return { ...prev, [tid]: updated };
+                              });
+                            }
+                          }
+                        }
+
+                        // Process dispels
+                        const spellDispels = spellLevel.dispels ?? [];
+                        if (spellDispels.length > 0) {
+                          const enemyTT = new Set(["target-enemy", "front-row-enemy", "random-enemy", "aoe-enemy", "self-row-enemy"]);
+                          const allyTT = new Set(["target-ally", "target-ally-or-self", "random-ally", "adjacent-ally", "aoe-team"]);
+                          for (const d of spellDispels) {
+                            let dTargetIds: string[];
+                            if (d.targetType === "self") dTargetIds = [activeCharId];
+                            else if (entries.length > 0 && ((enemyTT.has(d.targetType) && enemyTT.has(spellLevel.targetType ?? "")) || (allyTT.has(d.targetType) && allyTT.has(spellLevel.targetType ?? "")))) {
+                              dTargetIds = entries.map((e) => e.targetId);
+                            } else {
+                              const dr = resolveTargets(d.targetType, activeCharId, teams, getCharacter, currentHpMapRef.current);
+                              dTargetIds = dr.targets.map((t) => t.characterId);
+                            }
+                            for (const tid of dTargetIds) {
+                              const ex = buffsMap[tid] ?? [];
+                              const dispellable = ex.filter((b) => {
+                                const se = statusEffects.find((s) => s.id === b.effectId);
+                                if (se?.dispellable === false) return false;
+                                const polarity = b.category === "buff" ? "positive" : b.category === "debuff" ? "negative" : se?.polarity;
+                                if (d.category === "any") return true;
+                                if (d.category === "buff") return polarity === "positive";
+                                if (d.category === "debuff") return polarity === "negative";
+                                return false;
+                              });
+                              if (dispellable.length === 0) continue;
+                              const toRemove = d.count === -1 ? dispellable : [...dispellable].sort(() => Math.random() - 0.5).slice(0, d.count);
+                              const toRemoveIds = new Set(toRemove.map((b) => b.id));
+                              const tName = getCharacter(tid)?.name ?? "Unknown";
+                              addBattleLog(`${tName} loses ${toRemove.length} effect${toRemove.length > 1 ? "s" : ""}: ${toRemove.map((b) => b.effectName).join(", ")}.`);
+                              setBuffsMap((prev) => ({
+                                ...prev,
+                                [tid]: (prev[tid] ?? []).filter((b) => !toRemoveIds.has(b.id)),
+                              }));
+                            }
+                          }
+                        }
+
+                        // Log
+                        if (entries.length === 1 && entries[0].amount > 0) {
+                          const r = entries[0];
+                          const tName = getCharacter(r.targetId)?.name ?? "Unknown";
+                          const dmgText = r.isHealing ? `healing ${tName} for ${r.amount} HP` : `dealing ${r.amount} damage`;
+                          addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} on ${tName} ${dmgText}.`);
+                        } else if (entries.length > 1) {
+                          const totalDmg = entries.reduce((s, r) => s + r.amount, 0);
+                          const isHealing = entries[0]?.isHealing ?? false;
+                          addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} ${isHealing ? "healing" : "dealing"} ${totalDmg} total.`);
+                        } else {
+                          addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name}.`);
+                        }
+
+                        // Battle stats
+                        for (const r of entries) {
+                          if (r.isHealing && r.amount > 0) addBattleStat(activeCharId, "healingDone", r.amount);
+                          if (!r.isHealing && r.amount > 0) addBattleStat(activeCharId, "damageDone", r.amount);
+                          if (!r.isHealing && r.amount > 0) addBattleStat(r.targetId, "damageTaken", r.amount);
+                        }
+                      }
+
+                      // consumesCasterStacks on the parent skill
+                      const parentLevel = parentSkill?.levels[0];
+                      if (parentLevel?.consumesCasterStacks) {
+                        const cs = parentLevel.consumesCasterStacks;
+                        const skipStatus = cs.skipIfStatus;
+                        const shouldSkip = skipStatus && (buffsMap[activeCharId] ?? []).some((b) => b.effectId === skipStatus);
+                        if (!shouldSkip) {
+                          setBuffsMap((prev) => {
+                            const existing = prev[activeCharId] ?? [];
+                            const idx = existing.findIndex((b) => b.effectId === cs.effectId);
+                            if (idx === -1) return prev;
+                            const buff = existing[idx];
+                            const newStacks = (buff.stacks ?? 1) - cs.count;
+                            if (newStacks <= 0) {
+                              return { ...prev, [activeCharId]: existing.filter((_, i) => i !== idx) };
+                            }
+                            const updated = [...existing];
+                            updated[idx] = { ...buff, stacks: newStacks };
+                            return { ...prev, [activeCharId]: updated };
+                          });
+                        }
+                      }
+
+                      addBattleStat(activeCharId, "skillsUsed", 1);
+                      setDualCastState(null);
+                      // Advance turn
+                      if (isLastTurn) { endRound(); } else { nextTurn(); }
+                    }}
+                    disabled={!canAffordBoth}
+                    className={`w-full text-[10px] px-2 py-1 rounded text-white font-medium ${!canAffordBoth ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-500"}`}
+                  >
+                    {!canAffordBoth ? "Not Enough Energy" : "Cast Both Spells"}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Column 3: Selected character details — height synced to column 2, scrolls internally */}
           <div
@@ -4163,6 +4779,29 @@ export default function BattlefieldPage() {
                   continue;
                 }
 
+                if (movement.type === "teleport-target") {
+                  // Warp the primary target to a player-chosen empty cell on their team's grid
+                  const primaryTargetId = targetEntries[0]?.targetId;
+                  if (!primaryTargetId) continue;
+                  const targetTeam = teams.find((t) => t.placements.some((p) => p.characterId === primaryTargetId));
+                  if (!targetTeam) continue;
+                  const occupiedSet = new Set(targetTeam.placements.map((p) => `${p.position.row},${p.position.col}`));
+                  let hasEmpty = false;
+                  for (let r = 0; r < 3 && !hasEmpty; r++) {
+                    for (let c = 0; c < 3 && !hasEmpty; c++) {
+                      if (!occupiedSet.has(`${r},${c}`)) hasEmpty = true;
+                    }
+                  }
+                  if (!hasEmpty) {
+                    addBattleLog(`${getCharacter(primaryTargetId)?.name ?? "Unknown"} has nowhere to be warped to!`);
+                    continue;
+                  }
+                  // Reuse teleportRequest but with the target's charId and their side
+                  setTeleportRequest({ charId: primaryTargetId, destSide: targetTeam.side, instant: !!skillUsed.levels[lvlIdx]?.instant });
+                  pendingTeleport = true;
+                  continue;
+                }
+
                 let moveTargetIds: string[];
                 const isEnemy = enemyTargetTypesM.has(movement.targetType);
                 const isAlly = allyTargetTypesM.has(movement.targetType);
@@ -4384,6 +5023,25 @@ export default function BattlefieldPage() {
                   addBattleStat(entry.targetId, "damageTaken", entry.amount);
                 }
               }
+              // Drain (lifesteal): heal the caster for a % of total damage dealt
+              const drainPct = skillUsed.levels[lvlIdx]?.drain;
+              if (drainPct && drainPct > 0 && activeCharId) {
+                const totalDamageDealt = hpEntries.filter((e) => !e.isHealing && e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
+                if (totalDamageDealt > 0) {
+                  const healAmount = Math.ceil(totalDamageDealt * drainPct / 100);
+                  const casterChar = getCharacter(activeCharId);
+                  const casterMaxHp = casterChar?.stats.hp ?? 1;
+                  const casterCurHp = currentHpMapRef.current[activeCharId] ?? casterMaxHp;
+                  const newCasterHp = Math.min(casterMaxHp, casterCurHp + healAmount);
+                  if (newCasterHp > casterCurHp) {
+                    setCurrentHpMap((prev) => ({ ...prev, [activeCharId]: newCasterHp }));
+                    spawnDamageFloat(activeCharId, newCasterHp - casterCurHp, true);
+                    addBattleLog(`${attackerName} drains ${newCasterHp - casterCurHp} HP.`);
+                    addBattleStat(activeCharId, "healingDone", newCasterHp - casterCurHp);
+                  }
+                }
+              }
+
               // Consume caster imbue: strip any imbue-tagged buffs from the caster after the hit lands.
               if (skillUsed.levels[lvlIdx]?.consumesCasterImbue && activeCharId) {
                 const IMBUE_TAGS = new Set(["fire-imbue", "ice-imbue", "thunder-imbue"]);
@@ -4585,11 +5243,32 @@ export default function BattlefieldPage() {
             if (energyGenerate && activeCharId) {
               const genTrig = energyGenerate.trigger ?? "on-use";
               const damagedAnyG = targetEntries.some((e) => !e.isHealing && e.amount > 0);
-              const allowedG = genTrig === "on-use" || (genTrig === "on-attack-hit" && damagedAnyG);
+              const allowedG = genTrig === "on-use" || (genTrig === "on-attack-hit" && damagedAnyG) || genTrig === "next-round";
               if (allowedG) {
                 const casterSide = teams.find((t) => t.placements.some((p) => p.characterId === activeCharId))?.side;
                 if (casterSide) {
-                  if (energyGenerate.mode === "specific" && energyGenerate.color) {
+                  if (genTrig === "next-round") {
+                    // Deferred: store energy to be added at the start of the next round
+                    const generated: Record<string, number> = {};
+                    if (energyGenerate.mode === "specific" && energyGenerate.color) {
+                      generated[energyGenerate.color] = energyGenerate.count;
+                    } else if (energyGenerate.mode === "random") {
+                      for (let i = 0; i < energyGenerate.count; i++) {
+                        const pick = ENERGY_COLORS[Math.floor(Math.random() * ENERGY_COLORS.length)];
+                        generated[pick] = (generated[pick] ?? 0) + 1;
+                      }
+                    }
+                    setPendingNextRoundEnergy((prev) => {
+                      const existing = prev[casterSide] ?? {};
+                      const merged = { ...existing };
+                      for (const [c, n] of Object.entries(generated)) {
+                        merged[c] = (merged[c] ?? 0) + n;
+                      }
+                      return { ...prev, [casterSide]: merged };
+                    });
+                    const summary = Object.entries(generated).map(([c, n]) => `${n} ${c}`).join(", ");
+                    addBattleLog(`${attackerName} will generate ${summary} energy next round.`);
+                  } else if (energyGenerate.mode === "specific" && energyGenerate.color) {
                     const c = energyGenerate.color;
                     setTeamEnergy((prev) => ({
                       ...prev,

@@ -17,6 +17,7 @@ interface CombatantStats {
   currentHp?: number; // current HP for HP-based scaling (defaults to max HP if not provided)
   stolenEnergyCount?: number; // total energy stolen by this character so far this battle
   col?: number; // grid column: 0 = front, 1 = middle, 2 = back
+  bonusIgnoreSpirit?: number; // additional % SPI to ignore (from template-ignore-spirit tag or similar)
 }
 
 /**
@@ -144,7 +145,8 @@ export function calculateDamage(
   }
 
   // Apply ignore defense / ignore spirit (reduces effective DEF or SPI for this hit only)
-  const ignorePct = category === "physical" ? (skillLevel.ignoreDefense ?? 0) : category === "magical" ? (skillLevel.ignoreSpirit ?? 0) : 0;
+  const baseIgnoreSpi = (skillLevel.ignoreSpirit ?? 0) + (attacker.bonusIgnoreSpirit ?? 0);
+  const ignorePct = category === "physical" ? (skillLevel.ignoreDefense ?? 0) : category === "magical" ? Math.min(100, baseIgnoreSpi) : 0;
   if (ignorePct > 0) {
     const label = category === "physical" ? "DEF" : "SPI";
     const before = defensiveStat;
@@ -347,6 +349,24 @@ export function calculateDamage(
       breakdown.push(`Back row defender: -20% taken — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
     } else if (defender.col === 2 && skillLevel.ignoreRowDefense) {
       breakdown.push(`Back row defender: -20% bypassed (ignoreRowDefense)`);
+    }
+  }
+
+  // Healing-dealt modifier: attacker-side buffs/debuffs that scale outgoing healing.
+  if (isHealing) {
+    let healingDealtMod = 0;
+    for (const b of attacker.buffs) {
+      if (!b.tags) continue;
+      for (const t of b.tags) {
+        if (t.type !== "healing-dealt") continue;
+        const p = (t.params.percent as number) ?? 0;
+        healingDealtMod += p * (b.stacks ?? 1);
+      }
+    }
+    if (healingDealtMod !== 0) {
+      const before = finalDamage;
+      finalDamage = Math.max(0, finalDamage * (1 + healingDealtMod / 100));
+      breakdown.push(`Healing dealt: ${healingDealtMod > 0 ? "+" : ""}${healingDealtMod}% — ${before.toFixed(1)} → ${finalDamage.toFixed(1)}`);
     }
   }
 

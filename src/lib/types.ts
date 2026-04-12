@@ -64,7 +64,7 @@ export const TARGET_TYPE_LABELS: Record<TargetType, string> = {
   "no-target": "No Target",
 };
 
-export const EFFECT_TRIGGERS = ["on-use", "while-equipped", "on-attack-hit", "turn-start", "round-start", "on-hp-below", "on-hp-above"] as const;
+export const EFFECT_TRIGGERS = ["on-use", "while-equipped", "on-attack-hit", "turn-start", "round-start", "next-round", "on-hp-below", "on-hp-above"] as const;
 export type EffectTrigger = (typeof EFFECT_TRIGGERS)[number];
 
 export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
@@ -73,6 +73,7 @@ export const EFFECT_TRIGGER_LABELS: Record<EffectTrigger, string> = {
   "on-attack-hit": "On Attack Hit",
   "turn-start": "Turn Start",
   "round-start": "Round Start",
+  "next-round": "Next Round",
   "on-hp-below": "On HP Below %",
   "on-hp-above": "On HP At/Above %",
 };
@@ -106,7 +107,7 @@ export interface DispelAction {
   targetType: TargetType; // who gets dispelled
 }
 
-export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "pull-forward-one", "teleport-self", "recoil-self-one", "switch-self-adjacent"] as const;
+export const MOVEMENT_TYPES = ["push-back", "push-back-one", "pull-forward", "pull-forward-one", "teleport-self", "teleport-target", "recoil-self-one", "switch-self-adjacent"] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
 export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
@@ -115,6 +116,7 @@ export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
   "pull-forward": "Pull to Front Row",
   "pull-forward-one": "Pull Forward 1 Space",
   "teleport-self": "Teleport Self to Empty Space",
+  "teleport-target": "Warp Target to Empty Space",
   "recoil-self-one": "Recoil Self 1 Space Back",
   "switch-self-adjacent": "Switch Self to Adjacent Space (player picks)",
 };
@@ -185,6 +187,8 @@ export interface SkillLevel {
   executeBonus?: { threshold: number; maxBonus: number }; // bonus % damage scaling up as target HP drops below threshold
   bonusHpDamage?: { percent: number; source: "max" | "current" }; // adds % of target HP as additional damage (same category, defended normally)
   bonusDamageVsStatus?: { statusEffectId: string; percent: number }; // bonus % damage when the defender has the named status effect active
+  drain?: number; // lifesteal: heal the caster for this % of damage dealt (e.g. 100 = full drain, 50 = half)
+  variableRepeat?: { color: EnergyColor | "any"; max: number }; // ramping cost: player chooses 1..max extra energies of this color to spend, skill damage repeats once per energy spent
   splashHit?: SplashHit; // secondary damage payload that hits additional targets after the primary hit lands
   requiresAnyStatus?: string[]; // skill is disabled in the action bar unless the caster has at least one of these status effects active
   requiresMinStacks?: { effectId: string; count: number }; // skill is disabled unless the caster has at least `count` stacks of the specified buff
@@ -192,6 +196,7 @@ export interface SkillLevel {
   bonusShieldDamage?: number; // % bonus damage dealt to shields specifically (e.g. 50 = 50% extra damage against shield portion). Future shieldbreaker support.
   consumesCasterImbue?: boolean; // after damage applies, strip all imbue-tagged buffs from the caster
   consumesCasterStacks?: { effectId: string; count: number; skipIfStatus?: string }; // after skill resolves, remove `count` stacks of the specified buff from caster. If stacks reach 0, remove the buff. Skipped if caster has `skipIfStatus` active.
+  dualCast?: { templateIds: string[] }; // this skill opens a dual-cast picker: player picks 2 spells from the specified templates, targets each separately, both fire in succession. The skill itself has no damage �� it's a gateway.
 }
 
 export type SplashTargetPattern =

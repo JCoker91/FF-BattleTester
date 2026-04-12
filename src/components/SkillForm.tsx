@@ -711,6 +711,7 @@ function EnergyActionsEditor({
               <option value="on-use">On Use</option>
               <option value="on-attack-hit">On Hit</option>
               <option value="round-start">Round Start</option>
+              <option value="next-round">Next Round</option>
             </select>
           </>
         )}
@@ -1296,30 +1297,57 @@ export function SkillForm({
                     </select>
                   </div>
                 )}
-                {level.damageCategory && level.damageTier === "random" && (
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] text-gray-500">Pool:</span>
-                    {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => {
-                      const pool = level.randomTierPool ?? [];
-                      const checked = pool.includes(t);
-                      return (
-                        <label key={t} className="flex items-center gap-0.5 text-[10px] text-gray-300">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              const next = e.target.checked
-                                ? [...pool, t]
-                                : pool.filter((x) => x !== t);
-                              updateLevel(i, { randomTierPool: next.length > 0 ? next : undefined });
-                            }}
-                          />
-                          {DAMAGE_TIER_LABELS[t]}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
+                {level.damageCategory && level.damageTier === "random" && (() => {
+                  const pool = level.randomTierPool ?? [];
+                  const counts: Record<string, number> = {};
+                  for (const t of pool) counts[t] = (counts[t] ?? 0) + 1;
+                  return (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[10px] text-gray-500">Pool ({pool.length}):</span>
+                        {Object.entries(counts).map(([tier, count]) => (
+                          <span
+                            key={tier}
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-200"
+                          >
+                            {DAMAGE_TIER_LABELS[tier as keyof typeof DAMAGE_TIER_LABELS]} ×{count}
+                            <button
+                              type="button"
+                              className="ml-0.5 text-red-400 hover:text-red-300"
+                              onClick={() => {
+                                const idx = pool.indexOf(tier);
+                                if (idx === -1) return;
+                                const next = [...pool];
+                                next.splice(idx, 1);
+                                updateLevel(i, { randomTierPool: next.length > 0 ? next : undefined });
+                              }}
+                            >−</button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <select
+                          className="bg-gray-700 text-[10px] rounded px-1 py-0.5"
+                          id={`add-tier-${i}`}
+                          defaultValue={DAMAGE_TIERS.filter((t) => t !== "random")[0]}
+                        >
+                          {DAMAGE_TIERS.filter((t) => t !== "random").map((t) => (
+                            <option key={t} value={t}>{DAMAGE_TIER_LABELS[t]}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="text-[10px] px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white"
+                          onClick={() => {
+                            const sel = document.getElementById(`add-tier-${i}`) as HTMLSelectElement;
+                            const next = [...pool, sel.value];
+                            updateLevel(i, { randomTierPool: next });
+                          }}
+                        >+ Add</button>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {level.damageCategory && (
                   <div className="flex items-center gap-1 flex-wrap">
                     <label className="flex items-center gap-1 text-[10px] text-gray-400">
@@ -1444,6 +1472,20 @@ export function SkillForm({
                   />
                   <span className="text-[10px] text-gray-500">Revive</span>
                 </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-green-400">Drain %:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={200}
+                    className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-white text-[11px] focus:outline-none focus:border-gray-500 w-14"
+                    value={level.drain ?? 0}
+                    onChange={(e) => {
+                      const v = Math.max(0, Math.min(200, parseInt(e.target.value) || 0));
+                      updateLevel(i, { drain: v || undefined });
+                    }}
+                  />
+                </div>
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-red-400">HP Cost:</span>
                   <input
@@ -1902,6 +1944,64 @@ export function SkillForm({
                     ))}
                   </select>
                 </div>
+              </CollapsibleSection>
+            )}
+            {isAbility && templates && templates.length > 0 && (
+              <CollapsibleSection
+                title="Dual Cast"
+                hasContent={!!level.dualCast}
+              >
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-[10px] text-gray-400">
+                    <input
+                      type="checkbox"
+                      checked={!!level.dualCast}
+                      onChange={(e) => updateLevel(i, { dualCast: e.target.checked ? { templateIds: [templates[0]?.id ?? ""] } : undefined })}
+                      className="w-3 h-3"
+                    />
+                    Enable Dual Cast
+                  </label>
+                </div>
+                {level.dualCast && (() => {
+                  const raw = level.dualCast! as { templateIds?: string[]; templateId?: string };
+                  const dcIds = raw.templateIds ?? (raw.templateId ? [raw.templateId] : []);
+                  return (
+                    <div className="mt-1 space-y-1">
+                      {dcIds.map((tid, idx) => (
+                        <div key={idx} className="flex items-center gap-1">
+                          <select
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-gray-500"
+                            value={tid}
+                            onChange={(e) => {
+                              const next = [...dcIds];
+                              next[idx] = e.target.value;
+                              updateLevel(i, { dualCast: { templateIds: next } });
+                            }}
+                          >
+                            {templates.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                          {dcIds.length > 1 && (
+                            <button
+                              type="button"
+                              className="text-[10px] text-red-400 hover:text-red-300 px-1"
+                              onClick={() => {
+                                const next = dcIds.filter((_, j) => j !== idx);
+                                updateLevel(i, { dualCast: { templateIds: next } });
+                              }}
+                            >x</button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="text-[10px] px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white"
+                        onClick={() => updateLevel(i, { dualCast: { templateIds: [...dcIds, templates[0]?.id ?? ""] } })}
+                      >+ Add Template</button>
+                    </div>
+                  );
+                })()}
               </CollapsibleSection>
             )}
           </div>

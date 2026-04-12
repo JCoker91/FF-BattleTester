@@ -258,6 +258,19 @@ if (!existingTagNames.has("guaranteed-hit")) {
   );
 }
 
+if (!existingTagNames.has("healing-dealt")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "healing-dealt", "Healing Dealt", "Modifies outgoing healing from the holder. Positive values amplify heals cast by this character.",
+    JSON.stringify({ percent: { type: "number", label: "Modifier %", default: 50 } }), 23
+  );
+}
+if (!existingTagNames.has("template-ignore-spirit")) {
+  db.prepare("INSERT INTO effect_tag_types (id, name, label, description, param_schema, sort_order) VALUES (?, ?, ?, ?, ?, ?)").run(
+    uuid(), "template-ignore-spirit", "Template Ignore Spirit", "Attacks from the specified templates ignore a percentage of the target's SPI. Applied via while-equipped passive.",
+    JSON.stringify({ percent: { type: "number", label: "Ignore SPI %", default: 25 }, templateIds: { type: "string[]", label: "Template IDs (comma-separated)" } }), 24
+  );
+}
+
 // Update multi-strike tag to use "skill" param type instead of "string"
 const multiStrikeRow = db.prepare("SELECT id, param_schema FROM effect_tag_types WHERE name = 'multi-strike'").get() as { id: string; param_schema: string } | undefined;
 if (multiStrikeRow) {
