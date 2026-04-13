@@ -1084,6 +1084,11 @@ export default function BattlefieldPage() {
   // resolveTargets to filter dead units out of targeting options.
   const currentHpMapRef = useRef<Record<string, number>>({});
   currentHpMapRef.current = currentHpMap;
+  const buffsMapRef = useRef<Record<string, BuffDebuff[]>>({});
+  buffsMapRef.current = buffsMap;
+  // Characters who just had a "removed-on-damage" skip-turn status cleared this action.
+  // processStartOfTurn reads this to avoid skipping their turn.
+  const wokenByDamageRef = useRef<Set<string>>(new Set());
   // One-shot guard so the first-turn useEffect only fires once per battle entry.
   const firstTurnFiredRef = useRef(false);
 
@@ -1250,7 +1255,7 @@ export default function BattlefieldPage() {
       const timer = setTimeout(() => {
         addBattleLog(`${getCharacter(activeId)?.name ?? "Unknown"} is defeated and cannot act.`);
         if (currentTurnIndex >= turnOrder.length - 1) {
-          advanceToTurn(0, true);
+          endRound();
         } else {
           advanceToTurn(currentTurnIndex + 1);
         }
@@ -1744,9 +1749,12 @@ export default function BattlefieldPage() {
     if ((currentHpMapRef.current[charId] ?? 1) <= 0) {
       return true;
     }
-    const charBuffs = buffsMap[charId] ?? [];
+    const charBuffs = buffsMapRef.current[charId] ?? [];
     const char = getCharacter(charId);
     if (!char) return false;
+    // If this character just had a skip-turn status broken by damage, don't skip.
+    const wakenedByDamage = wokenByDamageRef.current.has(charId);
+    if (wakenedByDamage) wokenByDamageRef.current.delete(charId);
     let skipTurn = false;
     for (const b of charBuffs) {
       if (!b.tags) continue;
@@ -1766,7 +1774,7 @@ export default function BattlefieldPage() {
           setCurrentHpMap((prev) => ({ ...prev, [charId]: Math.min(char.stats.hp, cur + heal) }));
           spawnDamageFloat(charId, heal, true);
           addBattleLog(`${char.name} heals ${heal} HP from ${b.effectName}.`);
-        } else if (tag.type === "skip-turn") {
+        } else if (tag.type === "skip-turn" && !wakenedByDamage) {
           skipTurn = true;
           addBattleLog(`${char.name} is affected by ${b.effectName} and loses their turn!`);
         }
@@ -1792,6 +1800,7 @@ export default function BattlefieldPage() {
           const roll = Math.random() * 100;
           if (roll >= eff.chance) {
             addBattleLog(`${char.name}'s ${skill.name}: ${se.name} missed! (${eff.chance}% chance)`);
+            spawnFloat(charId, "MISS", "text-gray-400");
             continue;
           }
         }
@@ -2047,14 +2056,17 @@ export default function BattlefieldPage() {
       if (nextCharId) {
         const shouldSkip = processStartOfTurn(nextCharId);
         if (shouldSkip) {
-          tickBuffsForCharacter(nextCharId);
-          setTimeout(() => {
-            if (nextIdx >= turnOrder.length - 1) {
-              advanceToTurn(0, true);
-            } else {
+          if (nextIdx >= turnOrder.length - 1) {
+            // Last turn of the round — go through endRound() so skill points,
+            // end-of-round effects, and the level-up modal all fire correctly.
+            // endRound() handles tickBuffsForCharacter internally.
+            setTimeout(() => { endRound(); }, 100);
+          } else {
+            tickBuffsForCharacter(nextCharId);
+            setTimeout(() => {
               advanceToTurn(nextIdx + 1);
-            }
-          }, 100);
+            }, 100);
+          }
         }
       }
     }
@@ -3286,6 +3298,7 @@ export default function BattlefieldPage() {
                                             const roll = Math.random() * 100;
                                             if (roll >= eff.chance) {
                                               addBattleLog(`${aChar.name}'s ${se.name} missed ${getCharacter(tid)?.name ?? "Unknown"}!`);
+                                              spawnFloat(tid, "MISS", "text-gray-400");
                                               continue;
                                             }
                                           }
@@ -3423,19 +3436,53 @@ export default function BattlefieldPage() {
                                     for (const r of resultPerTarget) {
                                       if (r.amount > 0) spawnDamageFloat(r.tid, r.amount, r.isHealing);
                                     }
+                                    // Remove "removed-on-damage" statuses from damaged targets
+                                    const tmplDamagedIds = new Set(resultPerTarget.filter((r) => !r.isHealing && r.amount > 0).map((r) => r.tid));
+                                    if (tmplDamagedIds.size > 0) {
+                                      let rcChanged = false;
+                                      const rcNext = { ...buffsMapRef.current };
+                                      for (const tid of tmplDamagedIds) {
+                                        const list = rcNext[tid];
+                                        if (!list) continue;
+                                        const filtered = list.filter((b) => !b.tags?.some((t) => t.type === "removed-on-damage"));
+                                        if (filtered.length < list.length) {
+                                          rcChanged = true;
+                                          const removed = list.filter((b) => b.tags?.some((t) => t.type === "removed-on-damage"));
+                                          for (const b of removed) {
+                                            addBattleLog(`${getCharacter(tid)?.name ?? "Unknown"}'s ${b.effectName ?? "status"} was removed by damage.`);
+                                            if (b.tags?.some((t) => t.type === "skip-turn")) {
+                                              wokenByDamageRef.current.add(tid);
+                                            }
+                                          }
+                                          rcNext[tid] = filtered;
+                                        }
+                                      }
+                                      if (rcChanged) {
+                                        buffsMapRef.current = rcNext;
+                                        setBuffsMap(rcNext);
+                                      }
+                                    }
                                     // Use energy for the spell (not the parent template)
                                     if (selSkill) useSkillEnergy(selSkill.id);
                                     // Log
                                     if (resultPerTarget.length === 1) {
                                       const r = resultPerTarget[0];
                                       const tName = getCharacter(r.tid)?.name ?? "Unknown";
-                                      const dmgText = r.isHealing ? `healing ${tName} for ${r.amount} HP` : `dealing ${r.amount} ${selSkill!.levels[0].damageCategory ?? "physical"} damage`;
-                                      addBattleLog(`Round ${round}. ${aChar.name} uses ${selSkill!.name} on ${tName} ${dmgText}.`);
+                                      if (r.amount === 0 && !r.isHealing) {
+                                        addBattleLog(`Round ${round}. ${aChar.name} uses ${selSkill!.name} on ${tName}.`);
+                                      } else {
+                                        const dmgText = r.isHealing ? `healing ${tName} for ${r.amount} HP` : `dealing ${r.amount} ${selSkill!.levels[0].damageCategory ?? "physical"} damage`;
+                                        addBattleLog(`Round ${round}. ${aChar.name} uses ${selSkill!.name} on ${tName} ${dmgText}.`);
+                                      }
                                     } else {
                                       const totalDmg = resultPerTarget.reduce((s, r) => s + r.amount, 0);
                                       const isHealing = resultPerTarget[0]?.isHealing ?? false;
-                                      const dmgText = isHealing ? `healing ${resultPerTarget.length} targets for ${totalDmg} total HP` : `dealing ${totalDmg} total damage to ${resultPerTarget.length} targets`;
-                                      addBattleLog(`Round ${round}. ${aChar.name} uses ${selSkill!.name} ${dmgText}.`);
+                                      if (totalDmg === 0 && !isHealing) {
+                                        addBattleLog(`Round ${round}. ${aChar.name} uses ${selSkill!.name} on ${resultPerTarget.length} targets.`);
+                                      } else {
+                                        const dmgText = isHealing ? `healing ${resultPerTarget.length} targets for ${totalDmg} total HP` : `dealing ${totalDmg} total damage to ${resultPerTarget.length} targets`;
+                                        addBattleLog(`Round ${round}. ${aChar.name} uses ${selSkill!.name} ${dmgText}.`);
+                                      }
                                     }
                                     // Auto-advance turn
                                     if (expSkill.levels[expLevel]?.instant) {
@@ -3652,6 +3699,32 @@ export default function BattlefieldPage() {
                           }
                         }
 
+                        // Remove "removed-on-damage" statuses from damaged targets
+                        const dcDamagedIds = new Set(entries.filter((r) => !r.isHealing && r.amount > 0).map((r) => r.targetId));
+                        if (dcDamagedIds.size > 0) {
+                          let dcRcChanged = false;
+                          const dcRcNext = { ...buffsMapRef.current };
+                          for (const tid of dcDamagedIds) {
+                            const list = dcRcNext[tid];
+                            if (!list) continue;
+                            const filtered = list.filter((b) => !b.tags?.some((t) => t.type === "removed-on-damage"));
+                            if (filtered.length < list.length) {
+                              dcRcChanged = true;
+                              const removed = list.filter((b) => b.tags?.some((t) => t.type === "removed-on-damage"));
+                              for (const b of removed) {
+                                addBattleLog(`${getCharacter(tid)?.name ?? "Unknown"}'s ${b.effectName ?? "status"} was removed by damage.`);
+                                if (b.tags?.some((t) => t.type === "skip-turn")) {
+                                  wokenByDamageRef.current.add(tid);
+                                }
+                              }
+                              dcRcNext[tid] = filtered;
+                            }
+                          }
+                          if (dcRcChanged) {
+                            buffsMapRef.current = dcRcNext;
+                            setBuffsMap(dcRcNext);
+                          }
+                        }
                         // Process effects (buff/debuff applications) from the spell
                         const spellEffects = spellLevel.effects ?? [];
                         if (spellEffects.length > 0) {
@@ -3687,7 +3760,10 @@ export default function BattlefieldPage() {
                             for (const tid of effTargetIds) {
                               if (eff.chance !== undefined && eff.chance < 100) {
                                 const roll = Math.random() * 100;
-                                if (roll >= eff.chance) continue;
+                                if (roll >= eff.chance) {
+                                  spawnFloat(tid, "MISS", "text-gray-400");
+                                  continue;
+                                }
                               }
                               const tName = getCharacter(tid)?.name ?? "Unknown";
                               const modText = !se.stats.includes("none") ? ` (${eff.modifier > 0 ? "+" : ""}${eff.modifier}%)` : "";
@@ -3746,15 +3822,23 @@ export default function BattlefieldPage() {
                         }
 
                         // Log
-                        if (entries.length === 1 && entries[0].amount > 0) {
+                        if (entries.length === 1) {
                           const r = entries[0];
                           const tName = getCharacter(r.targetId)?.name ?? "Unknown";
-                          const dmgText = r.isHealing ? `healing ${tName} for ${r.amount} HP` : `dealing ${r.amount} damage`;
-                          addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} on ${tName} ${dmgText}.`);
+                          if (r.amount === 0 && !r.isHealing) {
+                            addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} on ${tName}.`);
+                          } else {
+                            const dmgText = r.isHealing ? `healing ${tName} for ${r.amount} HP` : `dealing ${r.amount} damage`;
+                            addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} on ${tName} ${dmgText}.`);
+                          }
                         } else if (entries.length > 1) {
                           const totalDmg = entries.reduce((s, r) => s + r.amount, 0);
                           const isHealing = entries[0]?.isHealing ?? false;
-                          addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} ${isHealing ? "healing" : "dealing"} ${totalDmg} total.`);
+                          if (totalDmg === 0 && !isHealing) {
+                            addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} on ${entries.length} targets.`);
+                          } else {
+                            addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name} ${isHealing ? "healing" : "dealing"} ${totalDmg} total.`);
+                          }
                         } else {
                           addBattleLog(`Round ${round}. ${attacker.name} dual casts ${spellSkill.name}.`);
                         }
@@ -4796,8 +4880,8 @@ export default function BattlefieldPage() {
                     addBattleLog(`${getCharacter(primaryTargetId)?.name ?? "Unknown"} has nowhere to be warped to!`);
                     continue;
                   }
-                  // Reuse teleportRequest but with the target's charId and their side
-                  setTeleportRequest({ charId: primaryTargetId, destSide: targetTeam.side, instant: !!skillUsed.levels[lvlIdx]?.instant });
+                  // Reuse teleportRequest but with the target's charId on their own grid
+                  setTeleportRequest({ charId: primaryTargetId, destSide: "ally", instant: !!skillUsed.levels[lvlIdx]?.instant });
                   pendingTeleport = true;
                   continue;
                 }
@@ -5000,6 +5084,36 @@ export default function BattlefieldPage() {
                   }
                 }
               }
+              // Remove "removed-on-damage" statuses from characters that took damage.
+              // Update the ref synchronously so processStartOfTurn (which may run
+              // later in this same handler via advanceToTurn) sees the removal.
+              const damagedIds = new Set(hpEntries.filter((e) => !e.isHealing && e.amount > 0).map((e) => e.targetId));
+              if (damagedIds.size > 0) {
+                let refChanged = false;
+                const refNext = { ...buffsMapRef.current };
+                for (const tid of damagedIds) {
+                  const list = refNext[tid];
+                  if (!list) continue;
+                  const filtered = list.filter((b) => !b.tags?.some((t) => t.type === "removed-on-damage"));
+                  if (filtered.length < list.length) {
+                    refChanged = true;
+                    const removed = list.filter((b) => b.tags?.some((t) => t.type === "removed-on-damage"));
+                    for (const b of removed) {
+                      const tName = getCharacter(tid)?.name ?? "Unknown";
+                      addBattleLog(`${tName}'s ${b.effectName ?? "status"} was removed by damage.`);
+                      // If the removed status had skip-turn, mark this character as woken
+                      if (b.tags?.some((t) => t.type === "skip-turn")) {
+                        wokenByDamageRef.current.add(tid);
+                      }
+                    }
+                    refNext[tid] = filtered;
+                  }
+                }
+                if (refChanged) {
+                  buffsMapRef.current = refNext;
+                  setBuffsMap(refNext);
+                }
+              }
               // Track battle stats: shielding
               for (const se of shieldEntries) {
                 if (se.amount > 0 && activeCharId) addBattleStat(activeCharId, "shieldingDone", se.amount);
@@ -5079,6 +5193,7 @@ export default function BattlefieldPage() {
               addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} (${redirectedEntries.length}).`);
               for (const t of redirectedEntries) {
                 const targetName = getCharacter(t.targetId)?.name ?? "Unknown";
+                if (t.amount === 0 && !t.isHealing) continue; // no-damage utility — skip per-target damage log
                 if (t.isHealing) {
                   addBattleLog(`${attackerName} heals ${targetName} for ${t.amount} HP.`);
                 } else {
@@ -5099,6 +5214,7 @@ export default function BattlefieldPage() {
                 return orig && re.targetId === orig.targetId;
               });
               for (const t of nonCovered) {
+                if (t.amount === 0 && !t.isHealing) continue;
                 const targetName = getCharacter(t.targetId)?.name ?? "Unknown";
                 const elemPart = t.element ? `${t.element} ` : "";
                 const dmgText = t.isHealing
@@ -5109,19 +5225,27 @@ export default function BattlefieldPage() {
             } else if (redirectedEntries.length === 1) {
               const t = redirectedEntries[0];
               const targetName = getCharacter(t.targetId)?.name ?? "Unknown";
-              const elemPart = t.element ? `${t.element} ` : "";
-              const dmgText = t.isHealing
-                ? `healing ${targetName} for ${t.amount} HP`
-                : `dealing ${t.amount} ${t.category ?? "physical"} ${elemPart}damage to ${targetName}`;
-              addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} ${dmgText}.`);
+              if (t.amount === 0 && !t.isHealing) {
+                addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} on ${targetName}.`);
+              } else {
+                const elemPart = t.element ? `${t.element} ` : "";
+                const dmgText = t.isHealing
+                  ? `healing ${targetName} for ${t.amount} HP`
+                  : `dealing ${t.amount} ${t.category ?? "physical"} ${elemPart}damage to ${targetName}`;
+                addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} ${dmgText}.`);
+              }
             } else {
               const totalDmg = redirectedEntries.reduce((sum, t) => sum + t.amount, 0);
               const isHealing = redirectedEntries[0]?.isHealing ?? false;
-              const elemPart = redirectedEntries[0]?.element ? `${redirectedEntries[0].element} ` : "";
-              const dmgText = isHealing
-                ? `healing ${redirectedEntries.length} targets for ${totalDmg} total HP`
-                : `dealing ${totalDmg} total ${redirectedEntries[0]?.category ?? "physical"} ${elemPart}damage to ${redirectedEntries.length} targets`;
-              addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} ${dmgText}.`);
+              if (totalDmg === 0 && !isHealing) {
+                addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} on ${redirectedEntries.length} targets.`);
+              } else {
+                const elemPart = redirectedEntries[0]?.element ? `${redirectedEntries[0].element} ` : "";
+                const dmgText = isHealing
+                  ? `healing ${redirectedEntries.length} targets for ${totalDmg} total HP`
+                  : `dealing ${totalDmg} total ${redirectedEntries[0]?.category ?? "physical"} ${elemPart}damage to ${redirectedEntries.length} targets`;
+                addBattleLog(`Round ${round}. ${attackerName} uses ${skillUsed.name} ${dmgText}.`);
+              }
             }
             // Apply dispels (remove buffs/debuffs from targets)
             const dispels = skillUsed.levels[lvlIdx]?.dispels ?? [];
@@ -5366,6 +5490,7 @@ export default function BattlefieldPage() {
                     const roll = Math.random() * 100;
                     if (roll >= eff.chance) {
                       addBattleLog(`${attackerName}'s ${se.name} missed ${getCharacter(tid)?.name ?? "Unknown"}! (${eff.chance}% chance)`);
+                      spawnFloat(tid, "MISS", "text-gray-400");
                       continue;
                     }
                   }
@@ -5573,6 +5698,20 @@ export default function BattlefieldPage() {
               });
             }
             if (!skillUsed.levels[lvlIdx]?.instant && !pendingTeleport) {
+              // Pre-mark characters whose removed-on-damage skip-turn statuses will
+              // be cleared by the delayed applyHit. This must happen synchronously
+              // BEFORE the turn advance so processStartOfTurn sees it.
+              const preDamagedIds = redirectedEntries.filter((e) => !e.isHealing && e.amount > 0);
+              for (const entry of preDamagedIds) {
+                const targetBuffs = buffsMap[entry.targetId] ?? [];
+                const hasRemovableSkip = targetBuffs.some((b) =>
+                  b.tags?.some((t) => t.type === "removed-on-damage") &&
+                  b.tags?.some((t) => t.type === "skip-turn")
+                );
+                if (hasRemovableSkip) {
+                  wokenByDamageRef.current.add(entry.targetId);
+                }
+              }
               if (isLastTurn) {
                 endRound();
               } else {

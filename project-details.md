@@ -516,6 +516,8 @@ User is configuring these manually in the UI.
 - **`roundEnding` flag locks the action bar during the 1.5s end-of-round delay**: `endRound()` flips `roundEnding = true` synchronously, then schedules the modal open via `setTimeout(1500)`. `nextTurn()`, `endRound()`, and `onApplyAndUse()` all early-return if `roundEnding` is true, plus the Pass / End Round buttons are visually disabled. Cleared in `beginNextRound()`. Without this, the last character's player can spam Pass / cast skills during the delay before the modal pops.
 - **Variable-repeat targeting**: random-enemy skills re-roll per hit (Zidane pattern); all other targeting locks onto the original primary target for every repeat (Squall's Renzokuken pattern). The branch is in the variable-repeat loop in `onApplyAndUse` keyed on `_level.targetType !== "random-enemy"`.
 - **`column-pierce-enemy` only hits the cell directly behind**, not the whole lane. The previous implementation pierced through everything in the lane behind the target — that was a bug, fixed during Squall configuration.
+- **`wokenByDamageRef` and sleep/stun removal timing**: when damage removes a `removed-on-damage` + `skip-turn` buff (e.g. Sleep), the buff removal happens 300ms later in `applyHit` (delayed for animation), but `nextTurn()` → `processStartOfTurn` runs synchronously and would still see the skip-turn buff. Fix: a pre-scan loop runs BEFORE `nextTurn()` in `onApplyAndUse` to identify damaged targets with both tags, adds them to `wokenByDamageRef`. `processStartOfTurn` checks this ref and skips the skip-turn logic for flagged characters. The ref entry is cleared after use.
+- **`teleport-target` destSide must be `"ally"`**: the teleportEmptyCells memo resolves the grid based on `destSide === "ally"` meaning "same team as charId". Since teleport-target sets `charId` to the target, `destSide` must be `"ally"` (= target's own grid), not `targetTeam.side` (which is a literal like "left"/"right" and never matches).
 
 ## User preferences (collaboration style)
 
@@ -527,6 +529,7 @@ User is configuring these manually in the UI.
 
 ## Where we left off (most recent context)
 
+- **Vivi configuration in progress** — all systems built (dualCast, drain, teleport-target, next-round energy gen, template-ignore-spirit). User is manually configuring the 27 Black Magic spells in the UI.
 - **Aerith configuration in progress** — innates (Cetra's Prayer, Aegis Ward) and basics (Basic Attack, Mend) configured. Limit conditionals (Healing Wind, Seal Evil, Planet Protector, Great Gospel) designed with dual-gated visibility. Working on abilities — Pulse of Life designed, considering limit stack riders on healing abilities for alternative limit generation without Cetra's Prayer.
 - **Squall configuration complete** — all chain abilities, standalone abilities, and innates designed and configured.
 - **System primitives built across all sessions**:
@@ -549,9 +552,9 @@ User is configuring these manually in the UI.
   - Variable repeat: clickable energy circles replacing slider, capped by available energy
   - Battle stats: collapsible table with Total/Direct/AOE/Indirect/True/Healing/Shields/Taken/Energy/Skills
   - End-of-round modal: energy pool with click-to-convert rainbow
-  - Grid characters: defeated greyed out + grayscale, HP border tint (yellow <50%, red <25%), MISS/DODGE/IMMUNE floats
+  - Grid characters: defeated greyed out + grayscale, HP border tint (yellow <50%, red <25%), MISS/DODGE/IMMUNE floats, MISS float on status effect application failure
   - Shield visual: blue overlay bar on HP in grid chips, active character panel, and details panel
-- **Bug fixes shipped across sessions**: template spell energy cost, defeated cover, choose-mode steal counter, round-1 energy gen, multi-strike cover redirect, template AOE targeting, healing on dead targets blocked
+- **Bug fixes shipped across sessions**: template spell energy cost, defeated cover, choose-mode steal counter, round-1 energy gen, multi-strike cover redirect, template AOE targeting, healing on dead targets blocked, end-of-round not triggering when last character is skipped (stun/sleep), status effect miss now shows MISS float, zero-damage utility spells no longer log damage amounts, `removed-on-damage` tag now removes buffs when holder takes damage (wired into onApplyAndUse, template spell inline, and dual-cast inline paths), sleep removal timing fix (wokenByDamageRef pre-scan), teleport-target (Warp) showing wrong team's grid fixed
 - **Database snapshot import/export shipped** — `db/snapshot.json` workflow for cross-machine sync.
 - **Leveling system playtested but not yet tuned** — character leveling (rainbow → +10% combat stats, max Lv 3) and skill points (1 SP/round per living char).
 - **Future shop feature** is on the table for the End-of-Round Phase modal — scaffolding is ready.

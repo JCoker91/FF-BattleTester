@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exportedAt": "2026-04-12T01:34:36.233Z",
+  "exportedAt": "2026-04-13T20:21:31.658Z",
   "tables": {
     "characters": [
       {
@@ -207,7 +207,7 @@
         "series": "FFIX",
         "type": "Arcanist",
         "energy_generation": "[{\"color\":\"red\",\"amount\":2},{\"color\":\"purple\",\"amount\":1}]",
-        "stats": "{\"hp\":690,\"spi\":50,\"atk\":17,\"mAtk\":75,\"def\":33,\"spd\":26}",
+        "stats": "{\"hp\":690,\"spi\":50,\"atk\":17,\"mAtk\":75,\"def\":33,\"spd\":31}",
         "passive": "",
         "basic_attack": "",
         "skill_ids": "[]",
@@ -215,7 +215,7 @@
         "summary": "",
         "equipped_innate_id": null,
         "equipped_basic_id": null,
-        "equipped_loadouts": "{\"innateId\":null,\"basicId\":null,\"abilityIds\":[]}",
+        "equipped_loadouts": "{\"innateId\":null,\"basicId\":null,\"abilityIds\":[\"03db86f5-ddc6-466a-9f91-3f91b782acf2\",\"2e9da19e-22cc-4714-8ab6-fcb6f70057f9\",\"ac470344-2763-40c6-8933-1baee0b98f04\"]}",
         "elemental_resistance": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "elemental_damage": "{\"fire\":100,\"ice\":100,\"thunder\":100,\"wind\":100,\"earth\":100,\"dark\":100,\"light\":100}",
         "status_resistance": "{}",
@@ -2280,6 +2280,270 @@
         "leveled": 0,
         "description": "Deals Stone damage to an enemy.",
         "template_id": null
+      },
+      {
+        "id": "03db86f5-ddc6-466a-9f91-3f91b782acf2",
+        "name": "Sleep",
+        "levels": "[{\"description\":\"Has a **50%** chance of inflicting [[sleep-status]] on target enemy for **1** turn.\",\"cost\":[{\"color\":\"purple\",\"amount\":1}],\"effects\":[{\"effectId\":\"542b6933-cee1-4326-a9c9-c023258a6520\",\"targetType\":\"target-enemy\",\"modifier\":20,\"duration\":1,\"chance\":50}],\"targetType\":\"target-enemy\",\"rangeTags\":[\"magic\"]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Puts a target to sleep.",
+        "template_id": null
+      },
+      {
+        "id": "2ba570c4-4acc-4a88-a9fe-d460ffff705a",
+        "name": "Slow",
+        "levels": "[{\"description\":\"Inflicts [[slow-status]] on a target enemy for **2** turns.\",\"cost\":[{\"color\":\"purple\",\"amount\":1}],\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"effects\":[{\"effectId\":\"28e6b6ff-11b3-487b-a803-0541ff1c1c85\",\"targetType\":\"target-enemy\",\"modifier\":-50,\"duration\":2}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Inflicts slow on an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "2e9da19e-22cc-4714-8ab6-fcb6f70057f9",
+        "name": "Blind",
+        "levels": "[{\"description\":\"Inflict [[blind-status]] on target enemy for **2** turns.\",\"cost\":[{\"color\":\"purple\",\"amount\":1}],\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"effects\":[{\"effectId\":\"d5738d63-2110-4f25-a156-3982db861def\",\"targetType\":\"target-enemy\",\"modifier\":20,\"duration\":2}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Inflict Blind on an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "1f93291e-e093-4f2d-9b52-9adb9a863e18",
+        "name": "Bio",
+        "levels": "[{\"description\":\"Deals **moderate** [[magical-damage]], [[dark-damage]], [[direct-damage]] damage to a target enemy and inflict [[poison-status]] for **2** turns.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"purple\",\"amount\":1}],\"damageCategory\":\"magical\",\"element\":\"dark\",\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"effects\":[{\"effectId\":\"5aceda4b-0161-4241-8c9a-22240520c333\",\"targetType\":\"target-enemy\",\"modifier\":20,\"duration\":2,\"trigger\":\"on-attack-hit\"}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deals dark damage and poison an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "3ce00588-35e3-4c89-80ce-9314311ef1f1",
+        "name": "Osmose",
+        "levels": "[{\"description\":\"Steals a random energy from the enemy team.\",\"cost\":[{\"color\":\"purple\",\"amount\":1}],\"rangeTags\":[\"magic\"],\"energySteal\":{\"count\":1,\"mode\":\"random\"}},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Steal energy from enemies",
+        "template_id": null
+      },
+      {
+        "id": "39e4eda4-8b95-498a-8f0f-b720e47c2428",
+        "name": "Drain",
+        "levels": "[{\"description\":\"Deals **moderate** [[magical-damage]], [[direct-damage]] to target enemy and restore HP based on damage dealt.\",\"cost\":[{\"color\":\"red\",\"amount\":1},{\"color\":\"green\",\"amount\":1}],\"damageCategory\":\"magical\",\"drain\":100,\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal damage and restore HP",
+        "template_id": null
+      },
+      {
+        "id": "4f2b2e82-44d8-4333-8f74-28ecdbf61336",
+        "name": "Fira",
+        "levels": "[{\"description\":\"Deals **high** [[fire-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":2}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"damageTier\":\"high\",\"targetType\":\"target-enemy\",\"element\":\"fire\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal fire damage to an enemy",
+        "template_id": null
+      },
+      {
+        "id": "b6f9c206-6ea3-4fc5-b33f-6d983b1aa7b7",
+        "name": "Blizzara",
+        "levels": "[{\"description\":\"Deals **high** [[ice-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":2}],\"damageCategory\":\"magical\",\"damageTier\":\"high\",\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"element\":\"ice\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal Ice damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "6bb05303-661b-469e-a341-61d0fef56fdb",
+        "name": "Thundara",
+        "levels": "[{\"description\":\"Deals **high** [[thunder-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":2}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"element\":\"thunder\",\"targetType\":\"target-enemy\",\"damageTier\":\"high\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal Thunder damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "49a10e52-b365-4e70-b75f-0305ac17b6dc",
+        "name": "Aerora",
+        "levels": "[{\"description\":\"Deals **high** [[wind-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":2}],\"damageCategory\":\"magical\",\"damageTier\":\"high\",\"targetType\":\"target-enemy\",\"rangeTags\":[\"magic\"],\"element\":\"wind\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal Wind damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "8dff94a1-f1b0-4d48-a82b-dd66f0cbfdb9",
+        "name": "Stonra",
+        "levels": "[{\"description\":\"Deals **high** [[earth-damage]], [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":2}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"element\":\"earth\",\"damageTier\":\"high\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal earth damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "4bac2804-6a64-45c9-8429-5c74891c5eb7",
+        "name": "Comet",
+        "levels": "[{\"description\":\"Deals **severe** [[magical-damage]], [[direct-damage]] damage to target enemy.\",\"cost\":[{\"color\":\"red\",\"amount\":2}],\"damageCategory\":\"magical\",\"damageTier\":\"severe\",\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal magical damage to an enemy.",
+        "template_id": null
+      },
+      {
+        "id": "75fc484f-4475-4a93-9cd8-565379517159",
+        "name": "Stop",
+        "levels": "[{\"description\":\"Inflict an enemy with [[stop-status]] with a **50%** chance for **1** turn.\",\"cost\":[{\"color\":\"purple\",\"amount\":2}],\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"effects\":[{\"effectId\":\"bfadd9ed-d210-4f47-ae9d-1d85afcb4a47\",\"targetType\":\"target-enemy\",\"modifier\":20,\"duration\":1,\"chance\":50}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Stop an enemy from taking actions",
+        "template_id": null
+      },
+      {
+        "id": "5117f4ac-fde2-4393-ae7e-6c026cf60f70",
+        "name": "Silence",
+        "levels": "[{\"description\":\"Inflict an enemy with [[silence-status]] with **50%** chance for **2** turns.\",\"cost\":[{\"color\":\"purple\",\"amount\":2}],\"targetType\":\"target-enemy\",\"rangeTags\":[\"magic\"],\"effects\":[{\"effectId\":\"03ddbf9b-1442-4721-ad0c-93831b9bbf7d\",\"targetType\":\"target-enemy\",\"modifier\":20,\"duration\":2,\"chance\":50}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Inflict an enemy with silence",
+        "template_id": null
+      },
+      {
+        "id": "ac470344-2763-40c6-8933-1baee0b98f04",
+        "name": "Warp",
+        "levels": "[{\"description\":\"Move target enemy to an open space on their battlefield.\",\"cost\":[{\"color\":\"yellow\",\"amount\":2}],\"rangeTags\":[\"magic\"],\"targetType\":\"target-enemy\",\"movements\":[{\"type\":\"teleport-target\",\"targetType\":\"target-enemy\"}]},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Teleport enemy to open space",
+        "template_id": null
+      },
+      {
+        "id": "04370659-e4fa-444d-a281-f163e8ccedcb",
+        "name": "Firaga",
+        "levels": "[{\"description\":\"Deals **moderate** [[fire-damage]], [[magical-damage]], [[aoe-damage]] damage to all enemies.\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"targetType\":\"aoe-enemy\",\"element\":\"fire\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal fire damage to all enemies",
+        "template_id": null
+      },
+      {
+        "id": "2c24ce99-d334-4ba5-9d78-e59a6e7cebd6",
+        "name": "Blizzaga",
+        "levels": "[{\"description\":\"Deals **moderate** [[ice-damage]], [[magical-damage]], [[aoe-damage]] damage to all enemies.\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"targetType\":\"aoe-enemy\",\"element\":\"ice\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal ice damage to all enemies.",
+        "template_id": null
+      },
+      {
+        "id": "a459560c-1d32-46b6-80a8-ae0a34846204",
+        "name": "Thundaga",
+        "levels": "[{\"description\":\"Deals **moderate** [[thunder-damage]], [[magical-damage]], [[aoe-damage]] damage to all enemies.\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"targetType\":\"aoe-enemy\",\"element\":\"thunder\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal thunder damage to all enemies.",
+        "template_id": null
+      },
+      {
+        "id": "a12869ca-1cab-4bc4-a68b-d1e3b5b499dc",
+        "name": "Aeroga",
+        "levels": "[{\"description\":\"Deals **moderate** [[wind-damage]], [[magical-damage]], [[aoe-damage]] damage to all enemies.\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"targetType\":\"aoe-enemy\",\"element\":\"wind\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal Wind damage to all enemies",
+        "template_id": null
+      },
+      {
+        "id": "b3054e96-6a41-45fe-85f4-71cf81c2a77a",
+        "name": "Stonga",
+        "levels": "[{\"description\":\"Deals **moderate** [[earth-damage]], [[magical-damage]], [[aoe-damage]] damage to all enemies.\",\"cost\":[{\"color\":\"red\",\"amount\":3}],\"damageCategory\":\"magical\",\"rangeTags\":[\"magic\"],\"element\":\"earth\",\"targetType\":\"aoe-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal earth damage to all enemies",
+        "template_id": null
+      },
+      {
+        "id": "49f68879-5880-42d9-97d5-6983063f32ad",
+        "name": "Flare",
+        "levels": "[{\"description\":\"Deals **severe** [[magical-damage]], [[direct-damage]] damage to a target enemy ingoring **30%** [[spi]].\",\"cost\":[{\"color\":\"red\",\"amount\":4}],\"damageCategory\":\"magical\",\"damageTier\":\"severe\",\"targetType\":\"target-enemy\",\"ignoreSpirit\":30},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal damage to target enemy",
+        "template_id": null
+      },
+      {
+        "id": "1a181677-bc9a-4994-ac43-44d4d6eec1b8",
+        "name": "Meteor",
+        "levels": "[{\"description\":\"Deals **high** [[magical-damage]], [[aoe-damage]] damage to all enemies.\",\"cost\":[{\"color\":\"red\",\"amount\":4}],\"damageCategory\":\"magical\",\"damageTier\":\"high\",\"rangeTags\":[\"magic\"],\"targetType\":\"aoe-enemy\"},{\"description\":\"\",\"cost\":[]},{\"description\":\"\",\"cost\":[]}]",
+        "character_id": "",
+        "skill_type": "ability",
+        "form_id": null,
+        "variant_group_id": null,
+        "leveled": 0,
+        "description": "Deal damage to all enemies.",
+        "template_id": null
       }
     ],
     "character_skills": [
@@ -3182,6 +3446,204 @@
         "variant_group_id": null,
         "conditions": null,
         "status_condition_id": null
+      },
+      {
+        "id": "199c294d-a8ab-4ed5-93ca-51a51ec5c5eb",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "03db86f5-ddc6-466a-9f91-3f91b782acf2",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "26d9cb1f-0dfb-4e6b-ac6c-c07a3f27e84e",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "2ba570c4-4acc-4a88-a9fe-d460ffff705a",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "6b3bcf24-603d-467d-80d3-0f9c8caf5151",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "2e9da19e-22cc-4714-8ab6-fcb6f70057f9",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "dca0e4a3-ba9e-42d9-b98f-0147f5133df9",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "1f93291e-e093-4f2d-9b52-9adb9a863e18",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "555f0a3a-d6df-4a98-8256-8afc9e663401",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "3ce00588-35e3-4c89-80ce-9314311ef1f1",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "38d44bfa-7d9a-4b23-b31d-d110e9e91fe8",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "39e4eda4-8b95-498a-8f0f-b720e47c2428",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "2da5798a-a917-40a9-977f-48337c6f0427",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "4f2b2e82-44d8-4333-8f74-28ecdbf61336",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "c305b666-356d-4dac-9744-2e857fa4514c",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "b6f9c206-6ea3-4fc5-b33f-6d983b1aa7b7",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "1caf0fda-6c69-4322-a200-9ceee822bb4d",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "6bb05303-661b-469e-a341-61d0fef56fdb",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "2a2f400d-3c5f-4c2e-b9b8-f14843665a9b",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "49a10e52-b365-4e70-b75f-0305ac17b6dc",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "d2d79941-68ce-415b-9b27-caeb3e669e59",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "8dff94a1-f1b0-4d48-a82b-dd66f0cbfdb9",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "aad8e8c0-8a6e-4081-91a2-3655f71457b4",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "4bac2804-6a64-45c9-8429-5c74891c5eb7",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "35b1aeb1-9293-40f1-9ab9-21d29fc94339",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "75fc484f-4475-4a93-9cd8-565379517159",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "07063172-bcad-4a79-8074-c9f1caf263b2",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "5117f4ac-fde2-4393-ae7e-6c026cf60f70",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "2147f918-412f-4c71-b943-56baee0f5d71",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "ac470344-2763-40c6-8933-1baee0b98f04",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "2fbaae3a-84ce-4934-a78a-2f2ca289f463",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "04370659-e4fa-444d-a281-f163e8ccedcb",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "d05de143-6d74-4b62-a95a-1c8ae66971e3",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "2c24ce99-d334-4ba5-9d78-e59a6e7cebd6",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "bd3f6ab7-7781-49c2-b55b-57970716fda2",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "a459560c-1d32-46b6-80a8-ae0a34846204",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "9813abd0-13ba-4e7b-9166-8732e5df779a",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "a12869ca-1cab-4bc4-a68b-d1e3b5b499dc",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "06aaaea0-1484-430e-ad95-b113c62452a0",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "b3054e96-6a41-45fe-85f4-71cf81c2a77a",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "06632243-3d13-4f3f-9887-67f23c8e2038",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "49f68879-5880-42d9-97d5-6983063f32ad",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
+      },
+      {
+        "id": "795829f0-eb0e-4499-96e4-13a884248d7e",
+        "character_id": "2b02b388-5e9b-4d87-a128-b1258df8871b",
+        "skill_id": "1a181677-bc9a-4994-ac43-44d4d6eec1b8",
+        "form_id": null,
+        "variant_group_id": null,
+        "conditions": null,
+        "status_condition_id": null
       }
     ],
     "skill_templates": [
@@ -3994,7 +4456,7 @@
         "id": "team-left",
         "name": "Team A",
         "side": "left",
-        "placements": "[{\"characterId\":\"1db2359a-4b33-47f8-a8ab-ba50bba99880\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":2,\"col\":2}}]"
+        "placements": "[{\"characterId\":\"2b02b388-5e9b-4d87-a128-b1258df8871b\",\"position\":{\"row\":2,\"col\":0}},{\"characterId\":\"b5add52a-7327-4c53-84a7-7d7ab0b18f9f\",\"position\":{\"row\":1,\"col\":0}},{\"characterId\":\"de1af1db-2d4e-411f-9dab-ca406dc0ad9b\",\"position\":{\"row\":0,\"col\":0}},{\"characterId\":\"f18458e1-4483-4a88-94b5-05995a0dcd6a\",\"position\":{\"row\":1,\"col\":1}},{\"characterId\":\"4972d77e-87b0-403c-9d2a-04481075dda6\",\"position\":{\"row\":0,\"col\":1}}]"
       },
       {
         "id": "team-right",
@@ -4955,6 +5417,23 @@
         "form_id": null,
         "dispellable": 1,
         "polarity": "positive"
+      },
+      {
+        "id": "542b6933-cee1-4326-a9c9-c023258a6520",
+        "name": "Sleep",
+        "category": "status",
+        "stat": "none",
+        "default_modifier": null,
+        "stackable": 0,
+        "max_stacks": null,
+        "on_max_stacks": null,
+        "resistable": 1,
+        "stats": "[\"none\"]",
+        "behavior": null,
+        "tags": "[{\"type\":\"removed-on-damage\",\"params\":{}},{\"type\":\"skip-turn\",\"params\":{}}]",
+        "form_id": null,
+        "dispellable": 1,
+        "polarity": "negative"
       }
     ],
     "effect_tag_types": [
